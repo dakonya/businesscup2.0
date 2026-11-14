@@ -468,6 +468,74 @@ describe("self-hosted NVIDIA inference in Brev", () => {
   });
 });
 
+describe("rules coach next experiments", () => {
+  const scenario = getScenarios()[0];
+  const base: CoachRequest["primary"] = { schemaVersion: 1, scenarioId: scenario.id, seed: 42, actions: [] };
+  const a: CoachRequest["primary"] = { ...base, actions: [{ atMs: scenario.checkpointMs, type: "set-api-replicas", value: 4 }] };
+  const b: CoachRequest["primary"] = { ...base, actions: [{ atMs: scenario.checkpointMs, type: "set-max-attempts", value: 1 }] };
+  const demo: CoachRequest = { mode: "debrief", primary: a, comparison: b, untilMs: scenario.durationMs };
+  const proposedAttempts = (text: string) => Number(text.match(/максимум попыток на (\d+)/)?.[1]);
+  const checkControlledComparison = (text: string) => {
+    expect(text).toContain("Повтори основную попытку, изменив только максимум попыток");
+    expect(text).toContain("Остальные решения и время их применения сохрани");
+    expect(text).toContain("с исходной основной попыткой при том же начальном числе и горизонте");
+  };
+
+  it.each([
+    ["A/B", a, b],
+    ["B/A", b, a],
+  ] as const)("does not repeat either tested setting in the real seed-42 %s debrief", async (_order, primary, comparison) => {
+    const input: CoachRequest = { ...demo, primary, comparison };
+    const fetcher = vi.fn<typeof fetch>();
+    const response = await createCoachHandler({ env: { INCIDENTLAB_COACH_MODE: "rules" }, fetcher })(request(input));
+    expect(response.status).toBe(200);
+    const body = await response.json() as CoachResponse;
+    expect(body.source).toBe("rules");
+    expect(proposedAttempts(body.nextExperiment)).toBe(2);
+    checkControlledComparison(body.nextExperiment);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it.each([[3, 1], [1, 2], [2, 1]])("suggests an allowed new value for a single run with maxAttempts=%i", (current, expected) => {
+    const primary: CoachRequest["primary"] = current === 3 ? a : { ...base, actions: [{ atMs: scenario.checkpointMs, type: "set-max-attempts", value: current }] };
+    const input: CoachRequest = { mode: "debrief", primary, untilMs: scenario.durationMs };
+    const actual = buildFacts(input);
+    const response = rulesCoach(input, actual, "Fixture fallback.");
+    const proposed = proposedAttempts(response.nextExperiment);
+    expect(proposed).toBe(expected);
+    expect(scenario.controls.find(control => control.type === "set-max-attempts")!.values).toContain(proposed);
+    expect(proposed).not.toBe(actual.primary.controls.maxAttempts);
+    checkControlledComparison(response.nextExperiment);
+  });
+
+  it.each([[3, 1], [1, 2], [2, 1]])("handles identical compared settings maxAttempts=%i", (current, expected) => {
+    const run: CoachRequest["primary"] = { ...base, actions: [{ atMs: scenario.checkpointMs, type: "set-max-attempts", value: current }] };
+    const input: CoachRequest = { ...demo, primary: run, comparison: structuredClone(run) };
+    const response = rulesCoach(input, buildFacts(input), "Fixture fallback.");
+    expect(proposedAttempts(response.nextExperiment)).toBe(expected);
+    checkControlledComparison(response.nextExperiment);
+  });
+
+  it("preserves early-hint detail and uses both runs only when a concrete experiment is appropriate", () => {
+    for (const hintLevel of [undefined, 1, 2, 3] as const) {
+      const input: CoachRequest = { ...demo, mode: "hint", ...(hintLevel === undefined ? {} : { hintLevel }) };
+      const response = rulesCoach(input, buildFacts(input), "Fixture fallback.");
+      if (hintLevel === undefined || hintLevel === 1) {
+        expect(response.nextExperiment).toContain("изучи его историю");
+        expect(response.nextExperiment).not.toMatch(/максимум попыток/);
+      } else if (hintLevel === 2) {
+        expect(response.nextExperiment).toContain("одну настройку повторов");
+        expect(response.nextExperiment).not.toMatch(/максимум попыток/);
+      } else {
+        expect(proposedAttempts(response.nextExperiment)).toBe(2);
+        checkControlledComparison(response.nextExperiment);
+      }
+    }
+    const debrief: CoachRequest = { ...demo, hintLevel: 1 };
+    expect(proposedAttempts(rulesCoach(debrief, buildFacts(debrief), "Fixture fallback.").nextExperiment)).toBe(2);
+  });
+});
+
 describe("honest hints and request limiting", () => {
   it("keeps reversed seed-42 outcomes, pending customers and each final queue distinct in rules debrief", () => {
     const scenario = getScenarios()[0];
@@ -511,7 +579,7 @@ describe("honest hints and request limiting", () => {
     const level2: CoachRequest = { ...hint, hintLevel: 2 };
     expect(rulesCoach(level2, buildFacts(level2), "Fixture fallback.").nextExperiment).not.toContain("максимум попыток 1");
     const level3: CoachRequest = { ...hint, hintLevel: 3 };
-    expect(rulesCoach(level3, buildFacts(level3), "Fixture fallback.").nextExperiment).toContain("максимум попыток 1");
+    expect(rulesCoach(level3, buildFacts(level3), "Fixture fallback.").nextExperiment).toContain("максимум попыток на 1");
   });
 
   it("returns a genuine HTTP 429 for exhausted per-client budget, without charging invalid input", async () => {
