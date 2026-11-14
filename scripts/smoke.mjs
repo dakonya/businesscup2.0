@@ -62,10 +62,12 @@ try {
   assert.equal(coach.source, "nvidia", `Real inference not confirmed: source=${coach.source}; ${redact(coach.warning ?? "no warning")}`);
   const { source, warning, ...content } = coach;
   coachContentSchema.parse(content);
+  const selfHostedBrev = content.limitations.includes("Self-hosted NVIDIA model on Brev; this is not the NVIDIA-hosted API.");
+  if (process.env.NVIDIA_DEPLOYMENT?.trim() === "brev") assert.ok(selfHostedBrev, "Expected self-hosted Brev provenance is missing.");
   const eventIds = new Set([...runs.left.events.map(event => `primary:${event.id}`), ...runs.right.events.map(event => `comparison:${event.id}`)]);
   const references = content.observations.flatMap(observation => observation.evidenceEventIds);
   assert.ok(references.length > 0 && references.every(id => eventIds.has(id)), "Evidence ID missing or associated with the wrong branch.");
-  report = { checkedAt: new Date().toISOString(), target: process.env.INCIDENTLAB_SMOKE_URL ? root : "local-production", source, elapsedMs: Math.round(performance.now() - started),
+  report = { checkedAt: new Date().toISOString(), target: process.env.INCIDENTLAB_SMOKE_URL ? root : "local-production", source, deployment: selfHostedBrev ? "brev" : "hosted", elapsedMs: Math.round(performance.now() - started),
     schemaValidated: true, evidenceValidated: true, evidenceNamespaces: [...new Set(references.map(id => id.split(":")[0]))],
     seed: 42, untilMs: request.untilMs, primaryMetrics: runs.left.metrics, comparisonMetrics: runs.right.metrics, delta: runs.delta, coach,
   };
