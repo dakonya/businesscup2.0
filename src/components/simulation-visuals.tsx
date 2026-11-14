@@ -17,7 +17,7 @@ export function RequestChart({ series, durationMs, checkpointMs, cursorMs }: {
   checkpointMs: number;
   cursorMs: number;
 }) {
-  if (!series.length) return <div className="viz-chart-empty"><Icon name="chart" size={28} /><p>Запустите симуляцию, чтобы увидеть результаты запросов во времени.</p></div>;
+  if (!series.length) return <div className="viz-chart-empty"><Icon name="chart" size={28} /><p>Запусти прогон, чтобы увидеть график запросов.</p></div>;
 
   const width = 760;
   const height = 270;
@@ -38,7 +38,7 @@ export function RequestChart({ series, durationMs, checkpointMs, cursorMs }: {
   return (
     <figure className="viz-chart">
       <div className="viz-chart-scroll">
-        <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Рассчитанные результаты запросов и попытки обращения к БД: ${formatSeconds(cursorMs)} из ${formatSeconds(durationMs)}. Данные текущей симуляции.`} className="viz-chart-svg">
+        <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`График запросов и попыток обращения к БД: ${formatSeconds(cursorMs)} из ${formatSeconds(durationMs)}. Данные текущего прогона.`} className="viz-chart-svg">
           <text x={left} y="17" className="viz-axis-title" fill="#69758B" fontSize="11">КОЛИЧЕСТВО</text>
           {[0, 1, 2, 3, 4].map(index => {
             const value = (yMaximum / 4) * index;
@@ -59,7 +59,7 @@ export function RequestChart({ series, durationMs, checkpointMs, cursorMs }: {
       </div>
       <figcaption>
         <div className="viz-chart-legend">{chartLines.map(line => <span key={line.key}><i style={{ backgroundColor: line.color }} className={line.key === "totalAttempts" ? "viz-key-dashed" : undefined} aria-hidden="true" />{line.label}</span>)}</div>
-        <p className="viz-chart-note">Успешные, с ошибкой и ожидающие — уникальные запросы. Повтор добавляет ещё одну попытку обращения к БД.</p>
+        <p className="viz-chart-note">Каждый запрос учтён один раз; ожидание ещё не означает ошибку. Повтор добавляет ещё одну попытку обращения к БД.</p>
       </figcaption>
     </figure>
   );
@@ -71,21 +71,21 @@ export function Topology({ metrics }: { metrics: RunMetrics }) {
       <div className="viz-node viz-node-api">
         <span className="viz-node-icon"><Icon name="server" size={22} /></span>
         <div className="viz-node-copy"><strong>API</strong><span>Принимает запросы</span></div>
-        <div className="viz-node-stat"><b>{formatCount(metrics.apiQueue)}</b><span>ожидают на API</span></div>
+        <div className="viz-node-stat"><b>{formatCount(metrics.apiQueue)}</b><span>ждут в очереди API</span></div>
       </div>
       <div className="viz-connector" aria-hidden="true"><span /><Icon name="arrow" size={19} /></div>
       <div className="viz-node viz-node-queue">
         <span className="viz-node-icon"><Icon name="activity" size={22} /></span>
-        <div className="viz-node-copy"><strong>Очередь / обработчики</strong><span>Очередь — ожидающая работа</span></div>
-        <div className="viz-node-stat"><b>{formatCount(metrics.dbQueue)}</b><span>ожидают базу данных</span></div>
+        <div className="viz-node-copy"><strong>Очередь и обработчики</strong><span>Работа ждёт обработки</span></div>
+        <div className="viz-node-stat"><b>{formatCount(metrics.dbQueue)}</b><span>ждут базу данных</span></div>
       </div>
       <div className="viz-connector" aria-hidden="true"><span /><Icon name="arrow" size={19} /></div>
       <div className="viz-node viz-node-database">
         <span className="viz-node-icon"><Icon name="database" size={22} /></span>
-        <div className="viz-node-copy"><strong>База данных</strong><span>Обрабатывает попытки</span></div>
-        <div className="viz-node-stat"><b>{formatCount(metrics.dbActive)}</b><span>активные операции</span></div>
+        <div className="viz-node-copy"><strong>База данных</strong><span>Выполняет обращения</span></div>
+        <div className="viz-node-stat"><b>{formatCount(metrics.dbActive)}</b><span>операций в работе</span></div>
       </div>
-      <div className="viz-topology-caption"><span className="viz-live-dot" aria-hidden="true" />Рассчитано для этой попытки <span className="viz-caption-divider">·</span> Обращений к БД: {formatCount(metrics.totalAttempts)}</div>
+      <div className="viz-topology-caption"><span className="viz-live-dot" aria-hidden="true" />Данные текущего прогона <span className="viz-caption-divider">·</span> Обращений к БД: {formatCount(metrics.totalAttempts)}</div>
     </div>
   );
 }

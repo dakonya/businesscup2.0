@@ -18,10 +18,10 @@ function coachContent(evidenceIds = ids.slice(0, 2)) {
   return {
     summary: "В прогоне есть неуспешные и ожидающие ответа запросы.",
     observations: [
-      { text: "Изучите более раннее событие.", evidenceEventIds: [evidenceIds[0]] },
-      { text: "Сравните его с более поздним событием.", evidenceEventIds: [evidenceIds[1]] },
+      { text: "Изучи более раннее событие.", evidenceEventIds: [evidenceIds[0]] },
+      { text: "Сравни его с более поздним событием.", evidenceEventIds: [evidenceIds[1]] },
     ],
-    nextExperiment: "Сравните одну настройку повторов при одинаковом начальном числе и времени.",
+    nextExperiment: "Сравни одну настройку повторов при одинаковом начальном числе и времени.",
     limitations: ["Эта модель упрощает рабочие системы."],
   };
 }
@@ -125,7 +125,7 @@ describe("coach input, byte limits, and configuration", () => {
     const second = await checkFallback(await handler(request()));
     expect(first).toEqual(second);
     expect(missing.length).toBeGreaterThan(0);
-    expect(first.warning).toBe("ИИ-помощник пока не настроен. Показан разбор по правилам на основе результатов прогона.");
+    expect(first.warning).toBe("ИИ-помощник не настроен. Разбор составлен по правилам на основе этого прогона.");
     expect(JSON.stringify(first)).not.toContain("fixture-key-not-real");
     expect(fetcher).not.toHaveBeenCalled();
   });
@@ -144,7 +144,7 @@ describe("coach input, byte limits, and configuration", () => {
     const response = await createCoachHandler({ env: configured, fetcher })(request({ ...input, untilMs: 0 }));
     const fallback = await checkFallback(response);
     expect(fallback.observations.every(observation => observation.evidenceEventIds.length === 0)).toBe(true);
-    expect(fallback.limitations.some(text => text.includes("ещё нет событий"))).toBe(true);
+    expect(fallback.limitations.some(text => text.includes("событий ещё нет"))).toBe(true);
     expect(fetcher).not.toHaveBeenCalled();
   });
 });
@@ -234,7 +234,7 @@ describe("grounded provider provenance and safe failure", () => {
   it.each([429, 500, 401])("returns HTTP 200 rules fallback for provider status %s without exposing its body", async status => {
     const fetcher = vi.fn<typeof fetch>(async () => new Response("private upstream details fixture-key-not-real", { status }));
     const result = await checkFallback(await createCoachHandler({ env: configured, fetcher })(request()));
-    expect(result.warning).toContain(status === 429 ? "лимит запросов" : "недоступен");
+    expect(result.warning).toContain(status === 429 ? "Лимит запросов" : "недоступен");
     expect(JSON.stringify(result)).not.toContain("private upstream details");
     expect(JSON.stringify(result)).not.toContain("fixture-key-not-real");
     expect(fetcher).toHaveBeenCalledTimes(1);
@@ -281,7 +281,7 @@ describe("grounded provider provenance and safe failure", () => {
     const fetcher = vi.fn<typeof fetch>();
     const result = await getCoach(input, facts, { env: { ...configured, NVIDIA_BASE_URL: base }, fetcher });
     expect(result.source).toBe("rules");
-    expect(result.warning).toBe("Не удалось подключить ИИ-помощника. Показан разбор по правилам.");
+    expect(result.warning).toBe("Не удалось подключить ИИ. Разбор составлен по правилам.");
     expect(fetcher).not.toHaveBeenCalled();
   });
 });
@@ -291,8 +291,8 @@ describe("honest hints and request limiting", () => {
     const hint: CoachRequest = { ...input, mode: "hint", hintLevel: 1 };
     const hintFacts = buildFacts(hint);
     const response = rulesCoach(hint, hintFacts, "Fixture fallback.");
-    expect(JSON.stringify(response)).not.toMatch(/максимум попыток 1|После тайм-аута работа в базе продолжается|slowdownFactor|первопричин|агрессивные повторы/i);
-    expect(response.nextExperiment).toContain("изучите");
+    expect(JSON.stringify(response)).not.toMatch(/максимум попыток \d|тайм-аут|повторн.{0,20}обращен|slowdownFactor|первопричин|агрессивные повторы/i);
+    expect(response.nextExperiment).toContain("изучи");
     expect(hintFacts.evidence.every(event => ["arrival", "request-succeeded", "request-failed", "intervention"].includes(event.kind))).toBe(true);
     const level2: CoachRequest = { ...hint, hintLevel: 2 };
     expect(rulesCoach(level2, buildFacts(level2), "Fixture fallback.").nextExperiment).not.toContain("максимум попыток 1");

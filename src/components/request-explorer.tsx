@@ -54,7 +54,7 @@ export function RequestExplorer({ view, selectedRequestId, onSelect, highlightEv
   const selectedVisible = selected && pageRequests.some(request => request.id === selected.id);
 
   return (
-    <section className="explorer" aria-label="Исследование запросов">
+    <section className="explorer" aria-label="Запросы">
       <div className="explorer-toolbar">
         <div className="explorer-filters" role="group" aria-label="Фильтр запросов по результату">
           {filters.map(option => <button key={option.value} type="button" className={`explorer-filter${filter === option.value ? " is-active" : ""}`} aria-pressed={filter === option.value} onClick={() => { setFilter(option.value); setPage(0); }}>
@@ -69,7 +69,7 @@ export function RequestExplorer({ view, selectedRequestId, onSelect, highlightEv
 
       <div className="explorer-table-scroll">
         <table className="explorer-table">
-          <caption className="explorer-caption">Уникальные пользовательские запросы. Откройте запрос, чтобы изучить полную историю событий.</caption>
+          <caption className="explorer-caption">Каждый запрос учтён один раз. Открой запрос, чтобы посмотреть все его события.</caption>
           <thead><tr><th scope="col">Запрос</th><th scope="col">Поступил</th><th scope="col">Результат</th><th scope="col">Попытки</th><th scope="col">Время ответа</th></tr></thead>
           <tbody>
             {pageRequests.map(request => {
@@ -82,7 +82,7 @@ export function RequestExplorer({ view, selectedRequestId, onSelect, highlightEv
                 <td>{request.latencyMs === null ? <span className="explorer-muted">{request.status === "pending" ? "Ожидание" : "Нет ответа"}</span> : `${formatCount(request.latencyMs)} мс`}</td>
               </tr>;
             })}
-            {pageRequests.length === 0 && <tr><td colSpan={5}><div className="explorer-empty"><Icon name="search" size={22} /><p>{view.requests.length === 0 ? "Запросы ещё не поступили. Продвиньте модельное время, чтобы изучить их." : "Нет запросов с такими условиями. Выберите другой результат или ID запроса."}</p></div></td></tr>}
+            {pageRequests.length === 0 && <tr><td colSpan={5}><div className="explorer-empty"><Icon name="search" size={22} /><p>{view.requests.length === 0 ? "Запросов пока нет. Запусти прогон, чтобы они появились." : "Ничего не нашлось. Попробуй другой ID или фильтр."}</p></div></td></tr>}
           </tbody>
         </table>
       </div>
@@ -94,12 +94,12 @@ export function RequestExplorer({ view, selectedRequestId, onSelect, highlightEv
 
       {selectedRequestId && <section id={`request-trace-${selectedRequestId}`} className="trace-panel" aria-label={`История событий запроса ${selectedRequestId}`}>
         <div className="trace-heading"><div><span className="trace-eyebrow">СОБЫТИЯ ЗАПРОСА</span><h3><code>{selectedRequestId}</code>{selected && <span className={`explorer-status explorer-status-${selected.status}`}>{statusLabels[selected.status]}</span>}</h3></div><button type="button" className="trace-close" onClick={() => onSelect(null)} aria-label="Закрыть историю запроса"><Icon name="close" size={18} /></button></div>
-        {selected && <p className="trace-summary">Попыток обращения к БД: {formatCount(selected.attempts)} · Поступление: {formatSeconds(selected.arrivedAtMs)} · Событий до {formatSeconds(view.atMs)}: {formatCount(selectedTrace.length)}{!selectedVisible ? ". Выбранный запрос находится вне текущей страницы или фильтра." : "."}</p>}
-        <p className="trace-explainer">Повтор добавляет ещё одну попытку. Таймаут означает, что API прекратил ждать; работа в базе данных может завершиться позже.</p>
+        {selected && <p className="trace-summary">Попыток обращения к БД: {formatCount(selected.attempts)} · Пришёл в {formatSeconds(selected.arrivedAtMs)} · Событий к {formatSeconds(view.atMs)}: {formatCount(selectedTrace.length)}{!selectedVisible ? ". В таблице запрос скрыт фильтром или находится на другой странице." : "."}</p>}
+        <p className="trace-explainer">Повтор добавляет ещё одну попытку обращения к БД. При таймауте API перестаёт ждать ответ, но база данных может продолжать работу.</p>
         {selectedTrace.length ? <ol className="trace-events">{selectedTrace.map(event => <li key={event.id} id={`evidence-${event.id}`} className={`trace-event trace-event-${event.kind}${highlightEventId === event.id ? " is-highlighted" : ""}`}>
           <div className="trace-event-marker" aria-hidden="true" />
           <div className="trace-event-content"><div className="trace-event-meta"><time>{formatSeconds(event.atMs)}</time><span className="trace-event-kind">{eventKind(event.kind)}</span>{event.attemptId && <code className="trace-attempt">{event.attemptId}</code>}</div><p>{eventMessage(event)}</p>{event.data && Object.keys(event.data).length > 0 && <dl className="trace-event-data">{Object.entries(event.data).map(([key, value]) => <div key={key}><dt>{dataLabel(key)}</dt><dd>{dataValue(key, value)}</dd></div>)}</dl>}</div>
-        </li>)}</ol> : <div className="trace-empty"><p>{selected ? "Для этого запроса пока нет событий в текущий момент модельного времени." : "В текущий момент модельного времени этого запроса ещё нет. Продвиньте время или выберите другой запрос."}</p></div>}
+        </li>)}</ol> : <div className="trace-empty"><p>{selected ? "У этого запроса пока нет событий." : "В этот момент запроса ещё нет. Продвинь время или выбери другой запрос."}</p></div>}
       </section>}
     </section>
   );

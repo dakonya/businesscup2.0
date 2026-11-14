@@ -99,7 +99,7 @@ export function createAttempt(
   label = "Попытка A",
 ): SavedAttempt {
   if (!isId(id) || !isLabel(label)) {
-    throw new Error("Некорректные параметры тренировки, идентификатор или название попытки.");
+    throw new Error("Не удалось создать попытку. Начни тренировку заново.");
   }
   const attempt: SavedAttempt = {
     id,
@@ -119,16 +119,16 @@ export function readSession(
   try {
     raw = storage.getItem(STORAGE_KEY);
   } catch {
-    return { session: null, error: "Сохранённая тренировка недоступна в этом браузере. Вы можете начать новую сессию." };
+    return { session: null, error: "Браузер не даёт открыть сохранённую тренировку. Начни новую." };
   }
   if (raw === null) return { session: null, error: null };
   try {
     const session = validateSession(JSON.parse(raw), scenarios);
     return session
       ? { session, error: null }
-      : { session: null, error: "Сохранённая тренировка повреждена или использует устаревший формат. Начните новую сессию." };
+      : { session: null, error: "Сохранение повреждено или устарело. Начни новую тренировку." };
   } catch {
-    return { session: null, error: "Не удалось прочитать сохранённую тренировку. Начните новую сессию." };
+    return { session: null, error: "Не удалось прочитать сохранение. Начни новую тренировку." };
   }
 }
 
@@ -140,7 +140,7 @@ export function writeSession(
     storage.setItem(STORAGE_KEY, JSON.stringify(session));
     return null;
   } catch {
-    return "Браузеру не удалось сохранить тренировку. Продолжайте в этой вкладке и не закрывайте её.";
+    return "Не удалось сохранить тренировку. После перезагрузки изменения могут пропасть — пока продолжай в этой вкладке.";
   }
 }
 
@@ -154,7 +154,7 @@ export function forkAttempt(
   if (
     !isInteger(checkpointMs) || checkpointMs < 0 || checkpointMs > source.cursorMs ||
     !isId(id) || id === source.id || !isLabel(label)
-  ) throw new Error("Дойдите до контрольной точки, прежде чем создавать новую попытку.");
+  ) throw new Error("Сначала дойди до точки, от которой хочешь начать новую попытку.");
   const next = cloneAttempt(source);
   next.id = id;
   next.label = label.trim();
@@ -172,8 +172,8 @@ export function appendIntervention(
   if (
     !isInteger(action.atMs) || !isInteger(action.value) || action.atMs < 0 ||
     action.atMs !== attempt.cursorMs || (lastAction && action.atMs < lastAction.atMs)
-  ) throw new Error("Создайте новую попытку, прежде чем изменять прошлое решение.");
-  if (!CONTROL_KEYS[action.type]) throw new Error("Такое вмешательство не поддерживается.");
+  ) throw new Error("Чтобы изменить прошлое решение, создай новую попытку.");
+  if (!CONTROL_KEYS[action.type]) throw new Error("Эта настройка недоступна.");
   const lastOfType = [...attempt.spec.actions].reverse().find((item) => item.type === action.type);
   // Also makes repeated clicks idempotent after playback has resumed.
   if (lastOfType?.value === action.value) return attempt;

@@ -16,9 +16,12 @@ await mkdir("docs/demo/screenshots", { recursive: true });
 try {
   await page.goto(baseURL);
   assert.equal(await page.locator("html").getAttribute("lang"), "ru");
-  assert.match(await page.title(), /Тренируйте решения при сбоях/);
+  assert.match(await page.title(), /Сервис тормозит/);
   await page.getByRole("button", { name: "Начать практику", exact: true }).waitFor();
   await page.screenshot({ path: "docs/demo/screenshots/welcome.png", fullPage: true });
+  await page.getByRole("button", { name: "Как это работает", exact: true }).click();
+  await page.screenshot({ path: "docs/demo/screenshots/help-desktop.png", fullPage: true });
+  await page.getByRole("button", { name: "Закрыть справку", exact: true }).click();
   await checkpoint("start, automatic checkpoint and inspect while paused", async () => {
     await page.getByRole("button", { name: "Начать практику", exact: true }).click();
     await page.locator(".playback-time strong").getByText("00:20", { exact: true }).waitFor({ timeout: 15000 });
@@ -42,7 +45,7 @@ try {
   let original;
   await checkpoint("rewind preserves A, excludes checkpoint decision, independent B", async () => {
     original = (await saved(page)).attempts[0];
-    await page.getByRole("button", { name: "Назад и новая ветка" }).dblclick();
+    await page.getByRole("button", { name: "Новая попытка с 00:20" }).dblclick();
     assert.equal(await page.locator(".attempt-tab").count(), 2);
     assert.equal(await page.locator(".action-log li").count(), 0);
     assert.equal(await page.getByRole("group", { name: "Реплики API", exact: true }).getByRole("button", { name: "2", exact: true }).getAttribute("aria-pressed"), "true");
@@ -59,7 +62,7 @@ try {
   });
   await checkpoint("same-horizon comparison and grounded coach", async () => {
     await page.getByRole("button", { name: "Сравнить попытки", exact: true }).click();
-    await page.getByRole("heading", { name: "Сравнение последствий" }).waitFor();
+    await page.getByRole("heading", { name: "Сравнение попыток" }).waitFor();
     assert.match(await page.locator(".compare-table").innerText(), /\+589/);
     assert.match(await page.locator(".compare-table").innerText(), /−552/);
     await page.getByRole("button", { name: "Разобрать сравнение" }).click();
@@ -92,7 +95,7 @@ try {
     assert.deepEqual(await saved(page), firstSaved);
     await second.evaluate(() => localStorage.setItem(sessionStorage.getItem("incidentlab.tab.snapshot.v1"), "{broken"));
     await second.reload();
-    await second.getByText("Не удалось прочитать сохранённую тренировку. Начните новую сессию.", { exact: true }).waitFor();
+    await second.getByText("Не удалось прочитать сохранение. Начни новую тренировку.", { exact: true }).waitFor();
     await second.getByRole("button", { name: "Начать практику", exact: true }).click();
     await second.getByRole("button", { name: "Приостановить симуляцию" }).click();
     await second.close();
@@ -100,11 +103,11 @@ try {
   await checkpoint("past edits require explicit branch, including after reload", async () => {
     const slider = page.getByRole("slider", { name: "Модельное время" });
     await slider.focus(); await slider.press("Home");
-    await page.getByRole("button", { name: "Создать ветку из этой точки" }).waitFor();
+    await page.getByRole("button", { name: "Новая попытка отсюда" }).waitFor();
     assert.ok(await page.getByRole("group", { name: "Максимум попыток", exact: true }).getByRole("button", { name: "2", exact: true }).isDisabled());
     await page.reload();
     await page.getByRole("button", { name: "Продолжить практику" }).click();
-    await page.getByRole("button", { name: "Создать ветку из этой точки" }).click();
+    await page.getByRole("button", { name: "Новая попытка отсюда" }).click();
     assert.equal(await page.locator(".attempt-tab").count(), 3);
   });
   await checkpoint("coach failure, retry, and stale response after branch switch", async () => {
@@ -151,6 +154,9 @@ try {
     assert.equal(await page.getByRole("button", { name: "Сохранить попытку", exact: true }).evaluate(el => document.activeElement === el), true);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({ path: "docs/demo/screenshots/mobile.png", fullPage: true });
+    await page.getByRole("button", { name: "На главную IncidentLab", exact: true }).click();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.screenshot({ path: "docs/demo/screenshots/welcome-mobile.png", fullPage: true });
   });
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: report, pageErrors: errors }, null, 2));

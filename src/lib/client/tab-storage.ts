@@ -9,7 +9,7 @@ type StorageEnvironment = {
 
 export const TAB_POINTER_KEY = "incidentlab.tab.snapshot.v1";
 const SNAPSHOT_PREFIX = `${STORAGE_KEY}.tab.`;
-const STORAGE_WARNING = "Можно продолжать тренировку в этой вкладке, но браузеру не удалось включить сохранение после перезагрузки.";
+const STORAGE_WARNING = "Сохранение недоступно. Продолжай в этой вкладке; после перезагрузки изменения могут пропасть.";
 
 /**
  * Call once after hydration. Every mount rotates the key, including duplicated tabs

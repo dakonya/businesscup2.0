@@ -25,8 +25,8 @@ function OutcomeBars({ left, right, leftLabel, rightLabel }: {
   const barWidth = 580;
   const bars = [{ metrics: left, label: leftLabel }, { metrics: right, label: rightLabel }];
   return <figure className="compare-outcomes">
-    <svg className="compare-outcomes-svg" viewBox="0 0 740 136" role="img" aria-label={`${leftLabel}: успешно — ${count(left.succeeded)}, с ошибкой — ${count(left.failed)}, в ожидании — ${count(left.pending)}. ${rightLabel}: успешно — ${count(right.succeeded)}, с ошибкой — ${count(right.failed)}, в ожидании — ${count(right.pending)}. Обе полосы используют одинаковую шкалу числа запросов пользователей.`}>
-      <text x={start} y="17" fill="#69758B" fontSize="11">УНИКАЛЬНЫЕ ЗАПРОСЫ · ОБЩАЯ ШКАЛА</text>
+    <svg className="compare-outcomes-svg" viewBox="0 0 740 136" role="img" aria-label={`${leftLabel}: успешно — ${count(left.succeeded)}, с ошибкой — ${count(left.failed)}, в ожидании — ${count(left.pending)}. ${rightLabel}: успешно — ${count(right.succeeded)}, с ошибкой — ${count(right.failed)}, в ожидании — ${count(right.pending)}. Каждый запрос пользователя посчитан один раз. Обе полосы в одной шкале.`}>
+      <text x={start} y="17" fill="#69758B" fontSize="11">ЗАПРОСЫ ПОЛЬЗОВАТЕЛЕЙ · ОБЩАЯ ШКАЛА</text>
       {bars.map(({ metrics, label }, index) => {
         const y = 34 + index * 46;
         let offset = 0;
@@ -66,7 +66,7 @@ export function ComparisonPanel({ comparison, leftLabel, rightLabel, onClose, on
     { name: "Попытки обращения к БД", left: count(left.metrics.totalAttempts), right: count(right.metrics.totalAttempts), change: signed(delta.totalAttempts), tone: "neutral" },
     { name: "Повторные попытки", left: count(left.metrics.retries), right: count(right.metrics.retries), change: signed(right.metrics.retries - left.metrics.retries), tone: "neutral" },
     {
-      name: "Задержка p95 · только успешные",
+      name: "Время ответа p95 · только успешные",
       left: latency(left.metrics.p95LatencyMs),
       right: latency(right.metrics.p95LatencyMs),
       change: left.metrics.p95LatencyMs === null || right.metrics.p95LatencyMs === null
@@ -84,9 +84,9 @@ export function ComparisonPanel({ comparison, leftLabel, rightLabel, onClose, on
   return <section className="compare-panel" aria-labelledby="compare-heading">
     <div className="compare-heading-row">
       <div>
-        <p className="compare-eyebrow">ОДИН ПОТОК. РАЗНЫЕ РЕШЕНИЯ.</p>
-        <h2 id="compare-heading">Сравнение последствий</h2>
-        <p className="compare-subtitle">Обе попытки рассчитаны до {seconds(untilMs)} с одинаковым сценарием и сидом.</p>
+        <p className="compare-eyebrow">ОДИНАКОВЫЙ ПОТОК ЗАПРОСОВ</p>
+        <h2 id="compare-heading">Сравнение попыток</h2>
+        <p className="compare-subtitle">Обе попытки прошли один и тот же сценарий до отметки {seconds(untilMs)}.</p>
       </div>
       <button type="button" className="compare-close" onClick={onClose} aria-label="Закрыть сравнение"><Icon name="close" size={20} /></button>
     </div>
@@ -94,14 +94,14 @@ export function ComparisonPanel({ comparison, leftLabel, rightLabel, onClose, on
     <div className="compare-context">
       <span><Icon name="activity" size={15} />Замедление каталога</span>
       <span>Сид {count(left.seed)}</span>
-      <span><Icon name="clock" size={15} />Горизонт {seconds(untilMs)}</span>
+      <span><Icon name="clock" size={15} />До {seconds(untilMs)}</span>
     </div>
 
     <OutcomeBars left={left.metrics} right={right.metrics} leftLabel={leftLabel} rightLabel={rightLabel} />
 
-    <div className="compare-table-scroll" tabIndex={0} role="region" aria-label="Результаты сравнения попыток. На узком экране таблицу можно прокручивать вбок">
+    <div className="compare-table-scroll" tabIndex={0} role="region" aria-label="Таблица сравнения попыток. Если она не помещается, прокрути вбок">
       <table className="compare-table">
-        <caption className="compare-table-caption">Изменение = {rightLabel} − {leftLabel}. Запросы в ожидании ещё не получили ответ и не считаются ошибками.</caption>
+        <caption className="compare-table-caption">Разница: «{rightLabel}» минус «{leftLabel}». В ожидании — запросы, для которых ещё нет результата.</caption>
         <thead><tr><th scope="col">Показатель</th><th scope="col">{leftLabel}</th><th scope="col">{rightLabel}</th><th scope="col">Изменение</th></tr></thead>
         <tbody>{rows.map(row => <tr key={row.name}><th scope="row">{row.name}</th><td>{row.left}</td><td>{row.right}</td><td className={`compare-change compare-change-${row.tone}`}>{row.change}</td></tr>)}</tbody>
       </table>
@@ -109,11 +109,11 @@ export function ComparisonPanel({ comparison, leftLabel, rightLabel, onClose, on
 
     <div className="compare-takeaway">
       <span className="compare-takeaway-icon"><Icon name="chart" size={20} /></span>
-      <div><strong>{rightLabel}: {successDifference}.</strong><p>К этому моменту остались запросы с ошибкой: {count(right.metrics.failed)}; в ожидании: {count(right.metrics.pending)}. Оценивайте их вместе с попытками обращения к БД: меньшее число попыток само по себе не гарантирует лучший результат.</p></div>
+      <div><strong>{rightLabel}: {successDifference}.</strong><p>Запросы с ошибкой: {count(right.metrics.failed)}; ещё ждут ответа: {count(right.metrics.pending)}. Сначала сравни успешные ответы, ошибки и ожидание, затем число обращений к БД.</p></div>
     </div>
 
     <div className="compare-footer">
-      <p>Это результаты симуляции данного кейса. Задержка успешных ответов не описывает запросы с ошибкой или в ожидании.</p>
+      <p>Время ответа здесь посчитано только для успешных запросов. Ошибки и ожидание смотри отдельно.</p>
       <button type="button" className="btn btn-primary compare-debrief" onClick={onDebrief}><Icon name="sparkles" size={18} />Разобрать сравнение<Icon name="arrow" size={17} /></button>
     </div>
   </section>;

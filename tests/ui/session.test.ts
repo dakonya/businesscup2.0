@@ -57,7 +57,7 @@ test("editing history requires an explicit fork", () => {
   source.cursorMs = 10_000;
   source.spec.actions = [{ atMs: 20_000, type: "set-api-replicas", value: 4 }];
   assert.throws(() => appendIntervention(source, { atMs: 10_000, type: "set-api-replicas", value: 1 }), /новую попытку/);
-  assert.throws(() => forkAttempt(source, 20_000, "b", "Attempt B"), /контрольной точки/);
+  assert.throws(() => forkAttempt(source, 20_000, "b", "Attempt B"), /Сначала дойди до точки/);
 });
 
 test("saved state restores valid future actions but rejects invalid versions, ranges and ordering", () => {
@@ -88,8 +88,8 @@ test("corrupt and blocked localStorage do not crash practice", () => {
   assert.equal(readSession({ getItem: () => "{bad" }, [scenario]).session, null);
   assert.match(readSession({ getItem: () => "{bad" }, [scenario]).error ?? "", /Не удалось прочитать/);
   assert.equal(readSession({ getItem: () => null }, [scenario]).error, null);
-  assert.match(readSession({ getItem: () => { throw new Error("blocked"); } }, [scenario]).error ?? "", /недоступна/);
-  assert.match(writeSession({ setItem: () => { throw new Error("quota"); } }, session()) ?? "", /не удалось сохранить/);
+  assert.match(readSession({ getItem: () => { throw new Error("blocked"); } }, [scenario]).error ?? "", /не даёт открыть/);
+  assert.match(writeSession({ setItem: () => { throw new Error("quota"); } }, session()) ?? "", /Не удалось сохранить/);
 });
 
 test("legacy default labels migrate to Russian without changing custom labels or run specifications", () => {

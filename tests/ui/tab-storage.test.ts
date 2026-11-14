@@ -56,7 +56,7 @@ test("untrusted pointers and colliding snapshot IDs cannot overwrite unrelated k
   const localStorage = memoryStorage([["unrelated", "leave me"], [`${STORAGE_KEY}.tab.taken`, "other tab"]]);
   const sessionStorage = memoryStorage([[TAB_POINTER_KEY, "unrelated"]]);
   const adapter = openTabStorage({ localStorage, sessionStorage, createId: () => "taken" });
-  assert.match(adapter.warning ?? "", /не удалось включить сохранение/);
+  assert.match(adapter.warning ?? "", /Сохранение недоступно/);
   assert.equal(adapter.storage.getItem(STORAGE_KEY), null);
   assert.equal(localStorage.getItem("unrelated"), "leave me");
   assert.equal(localStorage.getItem(`${STORAGE_KEY}.tab.taken`), "other tab");
@@ -68,9 +68,9 @@ test("storage restrictions preserve the active session in memory and expose a sa
     setItem: () => { throw new Error("blocked"); },
   };
   const adapter = openTabStorage({ localStorage: blocked, sessionStorage: blocked, createId: () => "a" });
-  assert.match(adapter.warning ?? "", /Можно продолжать тренировку/);
+  assert.match(adapter.warning ?? "", /Продолжай в этой вкладке/);
   const value = { schemaVersion: 1 as const, activeAttemptId: "a", attempts: [] };
-  assert.match(writeSession(adapter.storage, value) ?? "", /не удалось сохранить/);
+  assert.match(writeSession(adapter.storage, value) ?? "", /Не удалось сохранить/);
   assert.equal(adapter.storage.getItem(STORAGE_KEY), JSON.stringify(value));
 });
 
@@ -87,6 +87,6 @@ test("quota loss after initialization retains the newest run in memory", () => {
   const adapter = openTabStorage({ localStorage, sessionStorage: memoryStorage(), createId: () => "a" });
   adapter.storage.setItem(STORAGE_KEY, "before quota");
   blocked = true;
-  assert.throws(() => adapter.storage.setItem(STORAGE_KEY, "latest run"), /не удалось включить сохранение/);
+  assert.throws(() => adapter.storage.setItem(STORAGE_KEY, "latest run"), /Сохранение недоступно/);
   assert.equal(adapter.storage.getItem(STORAGE_KEY), "latest run");
 });

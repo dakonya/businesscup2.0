@@ -24,7 +24,7 @@ describe("Russian presentation preserves simulation data", () => {
     for (const event of eventsByKind.values()) {
       expect(eventKind(event.kind)).not.toBe("Событие системы");
       expect(eventMessage(event)).toMatch(/[А-Яа-яЁё]/);
-      expect(eventMessage(event)).not.toBe("Событие зарегистрировано в истории текущего прогона.");
+      expect(eventMessage(event)).not.toBe("Событие из текущего прогона.");
       expect(event.id).toContain(":");
     }
     expect(dataLabel("retryAtMs")).toBe("Время повтора, мс");

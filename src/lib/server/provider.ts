@@ -15,15 +15,16 @@ export function health(env: CoachEnv = serverEnv()): HealthResponse {
 export async function getCoach(input: CoachRequest, facts: Facts, options: { env?: CoachEnv; fetcher?: typeof fetch; timeoutMs?: number } = {}): Promise<CoachResponse> {
   const env = options.env ?? serverEnv();
   const missing = [!env.NVIDIA_API_KEY?.trim() && "NVIDIA_API_KEY", !env.NVIDIA_MODEL?.trim() && "NVIDIA_MODEL"].filter(Boolean);
-  if (missing.length) return rulesCoach(input, facts, "ИИ-помощник пока не настроен. Показан разбор по правилам на основе результатов прогона.");
-  if (facts.evidence.length < 2) return rulesCoach(input, facts, "Для обоснованного ответа ИИ пока недостаточно событий. Показан разбор по правилам.");
+  if (missing.length) return rulesCoach(input, facts, "ИИ-помощник не настроен. Разбор составлен по правилам на основе этого прогона.");
+  if (facts.evidence.length < 2) return rulesCoach(input, facts, "Пока недостаточно событий для ответа ИИ. Разбор составлен по правилам.");
   let base: URL;
   try {
     base = new URL((env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1").replace(/\/$/, "") + "/chat/completions");
     if (base.protocol !== "https:" || base.username || base.password || base.search || base.hash) throw new Error();
-  } catch { return rulesCoach(input, facts, "Не удалось подключить ИИ-помощника. Показан разбор по правилам."); }
+  } catch { return rulesCoach(input, facts, "Не удалось подключить ИИ. Разбор составлен по правилам."); }
   const prompt = [
     "You are IncidentLab's grounded on-call training coach. Return only JSON matching the supplied schema. All user-facing text (summary, observations.text, nextExperiment, limitations) must be concise Russian. Keep schema keys and evidence event IDs unchanged.",
+    "Use plain, natural Russian. Address the learner informally as ты when giving an instruction. Write connected, concrete explanations, without marketing language, metaphors, slang, or terse slogans. Keep every claim grounded in the supplied facts.",
     "Use only supplied replay facts. Provide 2 or 3 observations, each citing 1-3 supplied event IDs with their primary: or comparison: namespace. Cite only supplied IDs. Do not invent measurements or readiness scores, personality diagnoses, or employment predictions. Never change the simulation.",
     input.mode === "hint" ? `Hint mode level ${input.hintLevel ?? 1}. Level 1: ask the learner to inspect outcomes and traces; do not reveal the root cause or a winning setting. Level 2: point to timing and retry evidence without giving a winning value. Level 3: suggest one testable control change. Do not disclose mechanics beyond the current hint level.` : "Debrief mode: explain observed queueing and retry mechanisms, distinguish attempted operations from unique customers, and pending from failed.",
     "Offer exactly one next experiment. State the simulation's limits and successful-only latency bias. Evidence IDs support observations; numeric totals come from metrics, never estimates.",
@@ -60,7 +61,7 @@ export async function getCoach(input: CoachRequest, facts: Facts, options: { env
     return result;
   } catch (error) {
     const reason = error instanceof Error ? error.message : "unavailable";
-    const warning = reason === "timeout" || controller.signal.aborted ? "ИИ-помощник не ответил вовремя. Показан разбор по правилам." : reason === "rate-limited" ? "Достигнут лимит запросов к ИИ-помощнику. Показан разбор по правилам." : reason === "invalid" || error instanceof SyntaxError ? "Ответ ИИ-помощника не прошёл проверку. Показан разбор по правилам." : "ИИ-помощник недоступен. Показан разбор по правилам.";
+    const warning = reason === "timeout" || controller.signal.aborted ? "ИИ не ответил вовремя. Разбор составлен по правилам." : reason === "rate-limited" ? "Лимит запросов к ИИ исчерпан. Разбор составлен по правилам." : reason === "invalid" || error instanceof SyntaxError ? "Ответ ИИ не прошёл проверку. Разбор составлен по правилам." : "ИИ недоступен. Разбор составлен по правилам.";
     return rulesCoach(input, facts, warning);
   } finally { if (timer) clearTimeout(timer); }
 }
