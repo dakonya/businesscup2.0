@@ -219,7 +219,7 @@ export default function IncidentLab() {
         </aside></div>
         {comparisonState?.error && <div className="message message-error" role="alert">{comparisonState.error}</div>}{comparison && comparisonState && <section id="comparison"><ComparisonPanel comparison={comparison} leftLabel={attemptLabel(comparisonState.left.label)} rightLabel={attemptLabel(comparisonState.right.label)} onClose={() => setSelection(null)} onDebrief={() => { pause(); setCoachMode("debrief"); setDebriefPending(true); document.getElementById("coach-panel")?.scrollIntoView({ behavior: "smooth", block: "center" }); }} /></section>}
       </>}
-    </div>}</main><footer className="app-footer"><span><span className="footer-logo">IL</span>IncidentLab <span className="footer-separator">/</span> Практика дежурств</span><span>Модель каталога с заданной нагрузкой.</span></footer>
+    </div>}</main><footer className="app-footer"><span><span className="footer-logo">IL</span>IncidentLab <span className="footer-separator">/</span> Команда nexelle</span><span>Модель каталога с заданной нагрузкой.</span></footer>
   </div>;
 }
 
