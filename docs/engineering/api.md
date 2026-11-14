@@ -42,7 +42,7 @@ Body size is limited to **16,384 UTF-8 bytes**, including streamed bodies with a
 | 413 | `ApiError`, body too large |
 | 429 | `ApiError`, actual local limiter refusal, `Retry-After: 60` |
 
-Valid input with unavailable NVIDIA still returns 200, `source: "rules"`, and an honest warning. Fallback is deterministic for the same replay/mode and warning condition. It includes 2–3 observations, a next experiment, and limitations. At a horizon with no events, observation ID arrays can be empty; the limitations state that no trace evidence exists yet.
+Valid input with unavailable NVIDIA still returns 200, `source: "rules"`, and an honest warning. Provider HTTP 401 is labeled an authentication failure, 403 an access/permission refusal, 429 a rate limit; upstream response bodies and secret values are not exposed. Fallback is deterministic for the same replay/mode and warning condition. It includes 2–3 observations, a next experiment, and limitations. At a horizon with no events, observation ID arrays can be empty; the limitations state that no trace evidence exists yet.
 
 ## Provider behavior
 
@@ -59,3 +59,10 @@ The explicit structured-output allowlist currently contains `nvidia/nemotron-3.5
 The handler's process-local limiter permits up to 6 valid coach requests per client key per 60-second window, 60 globally per process/window, and 2 in flight. It stores at most 1,000 client keys and releases concurrency in a finally block, including on provider failure. Simulation endpoints do not exist; replay is local/browser-side.
 
 This is best-effort, **not distributed protection**: cold starts/new instances reset or multiply budgets. Client keys use the first forwarded IP when available; that value is trustworthy only behind a proxy that overwrites untrusted forwarding headers. The global and concurrency caps remain process-local even when client identity is spoofed. For broader public traffic, configure a platform WAF or a separately authorized shared limiter. No shared limiter, paid service, or new account was provisioned by this implementation.
+
+
+## Verify the actual application coach
+
+After `npm run build`, run `npm run smoke`. It launches a temporary production server, submits exactly one real A/B coach request (seed 42, horizon 120000, API replicas 4 versus maximum attempts 1 at 20000), and shuts down the temporary server. `source: rules` fails the command even with HTTP 200. Success requires the same content schema and every event reference in the proper replay namespace; the redacted response and computed metrics are saved in ignored `.next/incidentlab-smoke.json`. Review the English explanation against those metrics; schema/reference checks alone do not prove all prose true.
+
+For an actual published server, use `INCIDENTLAB_SMOKE_URL=https://<actual-origin> npm run smoke`. The URL must be a public HTTPS origin; redirect-to-login fails. Remote health must report configured NVIDIA variables. Local secrets are not sent by this script to the application; only the server-side hosting configuration controls the remote provider call. Each execution makes one coach POST and has no provider retry loop. Test fixtures exercise this command offline in isolated temporary directories and are not live inference evidence.

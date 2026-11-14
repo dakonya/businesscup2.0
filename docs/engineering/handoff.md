@@ -131,3 +131,11 @@ For the reproducible seed-42 example at 120 seconds:
 Both branches receive 960 customers. B produces 589 more successful responses and 552 fewer failures than A in this defined case. Describe these as simulated outcomes; do not present them as real-world performance improvements, universal tuning advice, or a readiness percentage. B's remaining 248 failures and 3 pending customers are part of the result.
 
 The supplied contest brief calls for a three-person team, a 24-hour build, a web-only B2C product, a public GitHub repository and production URL without mandatory login, a PDF of up to ten pages, and a five-minute pitch plus two-minute Q&A. Weights supplied in the brief are product/engineering 40%, paid value/retention 20%, user/problem 15%, business 15%, and originality 10%. This backend handoff preserves that context; it does not verify official contest rules, create the pitch/PDF, or establish paid retention and business demand.
+
+## Integration continuation — 2026-11-14
+
+The remote audit found only `feat/engine-coach`, `setup/incidentlab`, and `main`; the user confirmed that frontend is not ready. No candidate was guessed, no merge performed, and no competing UI created. Publish the actual frontend branch and handoff before integration. Contract v1 and frontend-owned source files remain unchanged.
+
+The backend now supplies `npm run smoke`: after a build it launches a temporary production server and requires a real `source: nvidia` coach response for the exact seed-42 A/B demo, shared schema, and valid branch-specific citations. `INCIDENTLAB_SMOKE_URL` targets the eventual published origin. The latest real hosted call failed authentication with HTTP 401; configuration presence must not be displayed as proven inference health. Rules fallback remains available and now distinguishes authentication/access failures.
+
+After the ordinary merge, explicitly verify start → trace → intervention A → rewind → B → compare → debrief, new session/reload/saved attempts, and independent tabs. Check that full trace is absent from localStorage and replay is not called on every animation frame. Show success, failed, and pending separately, and label p95 as successful responses only. No integrated browser-flow claim has been made while the frontend is absent.

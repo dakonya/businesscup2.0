@@ -210,11 +210,17 @@ describe("grounded provider provenance and safe failure", () => {
     expect(result.observations.flatMap(observation => observation.evidenceEventIds).every(id => facts.allowedIds.has(id))).toBe(true);
   });
 
-  it.each([429, 500, 401])("returns HTTP 200 rules fallback for provider status %s without exposing its body", async status => {
-    const fetcher = vi.fn<typeof fetch>(async () => new Response("private upstream details fixture-key-not-real", { status }));
+  it.each([
+    [429, "rate limit"],
+    [500, "unavailable"],
+    [401, "authentication failed (HTTP 401)"],
+    [403, "access denied (HTTP 403)"],
+  ] as const)("returns HTTP 200 rules fallback for provider status %s without exposing its body", async (status, expectedWarning) => {
+    const fetcher = vi.fn<typeof fetch>(async () => new Response("private upstream details fixture-key-not-real Invalid JWT serialization: Missing dot delimiter(s)", { status }));
     const result = await checkFallback(await createCoachHandler({ env: configured, fetcher })(request()));
-    expect(result.warning).toContain(status === 429 ? "rate limit" : "unavailable");
+    expect(result.warning).toContain(expectedWarning);
     expect(JSON.stringify(result)).not.toContain("private upstream details");
+    expect(JSON.stringify(result)).not.toContain("Invalid JWT serialization");
     expect(JSON.stringify(result)).not.toContain("fixture-key-not-real");
     expect(fetcher).toHaveBeenCalledTimes(1);
   });

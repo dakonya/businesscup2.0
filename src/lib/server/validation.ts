@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { CoachRequest } from "../contracts";
-import { validateRunSpec } from "../sim";
-import { DURATION_MS, MAX_ACTIONS } from "../sim/scenario";
+import { validateRunSpec } from "../sim/index.ts";
+import { DURATION_MS, MAX_ACTIONS } from "../sim/scenario.ts";
 
 const actionSchema = z.discriminatedUnion("type", [
   z.object({ atMs: z.number().int().min(0).max(DURATION_MS), type: z.literal("set-api-replicas"), value: z.number().int() }).strict(),

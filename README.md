@@ -20,10 +20,12 @@ npm test
 npm run build
 npm start
 npm run demo
-npm run smoke:coach
+npm run smoke
 ```
 
-`demo` runs the actual deterministic engine with seed 42 and prints two branch outcomes, deltas, trace sizes, and measured replay time. `smoke:coach` performs one small real NVIDIA inference when configured; missing configuration exits with code 2 and variable names only. `health` reports configuration presence, not proven provider health.
+`demo` runs the actual deterministic engine with seed 42 and prints two branch outcomes, deltas, trace sizes, and measured replay time. After a production build, `smoke` starts a temporary local production server and makes one real A/B coach request. It requires `source: "nvidia"`, the shared content schema, and valid branch-specific event IDs; HTTP 200 rules fallback fails the check. `INCIDENTLAB_SMOKE_URL=https://<actual-origin> npm run smoke` checks an existing published server instead. A successful check records a redacted report in ignored `.next/incidentlab-smoke.json`. Read the coach text against the printed metrics before claiming a grounded demo.
+
+The older `smoke:coach` is a small transport-only probe; it does not confirm a validated application coach. `health` reports configuration presence, not proven provider health. The latest live check found both NVIDIA variables present but the hosted request returned HTTP 401. See the [current Russian report](docs/engineering/report-ru.md) for the exact inference, integration, and hosting blockers.
 
 On the current development machine, Node/npm were installed outside the repository. If they are absent from PATH:
 

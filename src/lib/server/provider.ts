@@ -45,7 +45,10 @@ export async function getCoach(input: CoachRequest, facts: Facts, options: { env
     const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error("timeout")); }, options.timeoutMs ?? 18_000); });
     const result = await Promise.race([timeout, (async () => {
       const response = await (options.fetcher ?? fetch)(base, { method: "POST", redirect: "error", cache: "no-store", signal: controller.signal, headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.NVIDIA_API_KEY}` }, body: JSON.stringify(payload) });
-      if (!response.ok) throw new Error(response.status === 429 ? "rate-limited" : "unavailable");
+      if (!response.ok) {
+        const reason = response.status === 401 ? "authentication" : response.status === 403 ? "access-denied" : response.status === 429 ? "rate-limited" : "unavailable";
+        throw new Error(reason);
+      }
       const raw = JSON.parse(await readBoundedBody(response.body, 65_536));
       const content = raw?.choices?.[0]?.message?.content;
       if (typeof content !== "string" || content.length > 6_000) throw new Error("invalid");
@@ -58,7 +61,7 @@ export async function getCoach(input: CoachRequest, facts: Facts, options: { env
     return result;
   } catch (error) {
     const reason = error instanceof Error ? error.message : "unavailable";
-    const warning = reason === "timeout" || controller.signal.aborted ? "NVIDIA timed out; showing a deterministic rules analysis." : reason === "rate-limited" ? "NVIDIA rate limit reached; showing a deterministic rules analysis." : reason === "invalid" || error instanceof SyntaxError ? "NVIDIA returned an invalid response; showing a deterministic rules analysis." : "NVIDIA is unavailable; showing a deterministic rules analysis.";
+    const warning = reason === "timeout" || controller.signal.aborted ? "NVIDIA timed out; showing a deterministic rules analysis." : reason === "authentication" ? "NVIDIA authentication failed (HTTP 401); showing a deterministic rules analysis." : reason === "access-denied" ? "NVIDIA access denied (HTTP 403); check account/model permissions. Showing a deterministic rules analysis." : reason === "rate-limited" ? "NVIDIA rate limit reached; showing a deterministic rules analysis." : reason === "invalid" || error instanceof SyntaxError ? "NVIDIA returned an invalid response; showing a deterministic rules analysis." : "NVIDIA is unavailable; showing a deterministic rules analysis.";
     return rulesCoach(input, facts, warning);
   } finally { if (timer) clearTimeout(timer); }
 }
