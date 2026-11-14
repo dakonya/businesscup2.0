@@ -1,9 +1,10 @@
 // Optional browser QA runner. Use an installed Playwright runtime; no app dependency is added.
 import assert from "node:assert/strict";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 const { chromium } = await import(process.env.INCIDENTLAB_PLAYWRIGHT_MODULE || "playwright");
 const baseURL = process.env.INCIDENTLAB_URL || "http://127.0.0.1:3000";
-const browser = await chromium.launch({ headless: true, channel: "chrome" });
+const executablePath = process.env.INCIDENTLAB_BROWSER_EXECUTABLE_PATH;
+const browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : { channel: "chrome" }) });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1080 }, reducedMotion: "reduce" });
 const page = await context.newPage();
 const errors = [];
@@ -65,7 +66,20 @@ try {
     await page.getByRole("heading", { name: "Сравнение попыток" }).waitFor();
     assert.match(await page.locator(".compare-table").innerText(), /\+589/);
     assert.match(await page.locator(".compare-table").innerText(), /−552/);
+    assert.equal(await page.getByRole("rowheader", { name: "Время ответа p95 · только успешные", exact: true }).isVisible(), true);
+    const actualCoachResponse = page.waitForResponse(response => response.url().endsWith("/api/coach") && response.request().method() === "POST");
     await page.getByRole("button", { name: "Разобрать сравнение" }).click();
+    const httpResponse = await actualCoachResponse;
+    assert.equal(httpResponse.status(), 200);
+    const posted = httpResponse.request().postDataJSON();
+    assert.equal(posted.untilMs, 120000);
+    assert.equal(posted.mode, "debrief");
+    assert.deepEqual(posted.primary.actions, [{ atMs: 20000, type: "set-api-replicas", value: 4 }]);
+    assert.deepEqual(posted.comparison.actions, [{ atMs: 20000, type: "set-max-attempts", value: 1 }]);
+    const actualCoach = await httpResponse.json();
+    assert.equal(actualCoach.source, "rules");
+    assert.ok(actualCoach.observations.some(observation => observation.evidenceEventIds.some(id => id.startsWith("primary:"))));
+    assert.ok(actualCoach.observations.some(observation => observation.evidenceEventIds.some(id => id.startsWith("comparison:"))));
     await page.locator(".coach-source").waitFor({ timeout: 25000 });
     const source = await page.locator(".coach-source").innerText();
     assert.equal(source, "Разбор по правилам");
@@ -138,9 +152,15 @@ try {
     if (pendingRoute) await pendingRoute.abort().catch(() => {});
     await page.unroute("**/api/coach");
     const text = '<img src=x onerror="window.unsafeCoach=true">';
-    await page.route("**/api/coach", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ source: "rules", summary: text, observations: [], nextExperiment: "UI safety fixture only.", limitations: [] }) }));
+    const provenance = "Модель NVIDIA работает на Brev. Это отдельный сервер, а не hosted API NVIDIA.";
+    await page.route("**/api/coach", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ source: "nvidia", summary: text, observations: [], nextExperiment: "UI safety fixture only; no real provider call.", limitations: [provenance] }) }));
     await page.getByRole("button", { name: "Повторить запрос", exact: true }).click();
     await page.getByText(text, { exact: true }).waitFor();
+    assert.equal(await page.locator(".coach-source.nvidia").innerText(), "Разбор ИИ");
+    assert.equal(await page.locator(".coach-warning").count(), 0);
+    await page.locator(".coach-response details summary").click();
+    assert.equal(await page.getByText(provenance, { exact: true }).isVisible(), true);
+    report.push("nvidia badge and Brev provenance: UI fixture only, no inference");
     assert.equal(await page.locator(".coach-response img").count(), 0);
     assert.equal(await page.evaluate(() => window.unsafeCoach), undefined);
     await page.unroute("**/api/coach");
@@ -160,5 +180,7 @@ try {
     await page.screenshot({ path: "docs/demo/screenshots/welcome-mobile.png", fullPage: true });
   });
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ passed: report, pageErrors: errors }, null, 2));
+  const result = { checkedAt: new Date().toISOString(), baseURL, browserVersion: browser.version(), passed: report, pageErrors: errors };
+  if (process.env.INCIDENTLAB_BROWSER_REPORT) await writeFile(process.env.INCIDENTLAB_BROWSER_REPORT, JSON.stringify(result, null, 2) + "\n");
+  console.log(JSON.stringify(result, null, 2));
 } finally { await browser.close(); }

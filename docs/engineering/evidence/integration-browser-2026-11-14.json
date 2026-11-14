@@ -1,0 +1,27 @@
+{
+  "checkedAt": "2026-11-14T16:56:48.997Z",
+  "baseURL": "http://127.0.0.1:3100",
+  "browserVersion": "159.0.8154.6",
+  "passed": [
+    "start, automatic checkpoint and inspect while paused",
+    "one intervention on double click; actual consequences",
+    "rewind preserves A, excludes checkpoint decision, independent B",
+    "coach source: Разбор по правилам",
+    "same-horizon comparison and grounded coach",
+    "reload restores specs and cursor",
+    "independent tabs and corrupted localStorage recovery",
+    "past edits require explicit branch, including after reload",
+    "coach failure, retry, and stale response after branch switch",
+    "nvidia badge and Brev provenance: UI fixture only, no inference",
+    "coach wait is bounded; model text remains plain text",
+    "360px layout, keyboard controls, no page overflow"
+  ],
+  "pageErrors": [],
+  "cleanContextConsoleCheck": {
+    "checkedAt": "2026-11-14T16:57:28.882Z",
+    "realRulesHttpStatus": 200,
+    "consoleErrors": [],
+    "failedRequests": [],
+    "pageErrors": []
+  }
+}
