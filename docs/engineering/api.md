@@ -4,7 +4,7 @@ The authority for request and response types is `src/lib/contracts.ts`; this doc
 
 ## GET /api/health
 
-Returns HTTP 200 and `HealthResponse`: `status: "ok"`, `contractVersion: 1`, and `coachConfigured`. The boolean checks nonblank `NVIDIA_API_KEY` and `NVIDIA_MODEL` only. It does not call NVIDIA or prove inference access. It exposes no secret values.
+Returns HTTP 200 and `HealthResponse`: `status: "ok"`, `contractVersion: 1`, and `coachConfigured`. The boolean checks nonblank `NVIDIA_API_KEY` and `NVIDIA_MODEL` and a recognized deployment setting. Brev also requires its explicit base URL and the supported Nano 9B model ID. It does not validate network access, call the model, or prove inference health. It exposes no secret values.
 
 ## POST /api/coach
 
@@ -46,13 +46,27 @@ Valid input with unavailable NVIDIA still returns 200, `source: "rules"`, and an
 
 ## Provider behavior
 
-One non-streaming HTTPS POST is made to the server-configured base URL's `/chat/completions` endpoint. Redirects are rejected. There are **no automatic retries** and no alternate paid provider. The deadline is **18 seconds**, including body parsing, enforced with abort plus a timeout race. Route max duration is 25 seconds; the frontend example uses 22 seconds. The response body is limited to 65,536 bytes; message content to 6,000 characters and 1,200 generated tokens.
+One non-streaming HTTPS POST is made to the server-configured base URL's `/chat/completions` endpoint. Redirects are rejected. There are **no automatic retries** and no alternate paid provider. The deadline is **18 seconds**, including body parsing, enforced with abort plus a timeout race. Route max duration is 25 seconds; the frontend example uses 22 seconds. The response body is limited to 65,536 bytes; message content to 6,000 characters. The output budget is 1,200 tokens for hosted inference and 800 for the prepared Brev deployment.
 
 The provider supplies content only. The server owns source/warning provenance. Zod checks the JSON object's exact shape, 2–3 observations, bounded strings and arrays, and at least one event reference per provider observation. Every reference must be one of the actual supplied IDs with `primary:` or `comparison:` namespace. Unknown or cross-branch invented IDs cause rules fallback. `reasoning_content` is never used as the answer. The server does not log provider bodies or internal error details.
 
 Schema validation and references constrain the output; they do not prove every free-text inference true. A conservative forbidden-claim check rejects percentage/readiness/employability patterns; it is not a complete semantic safety guarantee. The prompt requires facts only, concise English, no personal diagnosis or employment prediction, no invented metrics, and one testable experiment. Learners can open the cited trace events to assess the explanation.
 
 The explicit structured-output allowlist currently contains `nvidia/nemotron-3.5-super-vl-120b-a12b`, whose [hosted reference documents JSON schema](https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3_5-super-vl-120b-a12b-infer). Other configured models use JSON prompting followed by the same strict validation. The [GPT-OSS-120B reference](https://docs.api.nvidia.com/nim/reference/openai-gpt-oss-120b-infer) and [20B reference](https://docs.api.nvidia.com/nim/reference/openai-gpt-oss-20b-infer) document their hosted model IDs and reasoning controls but do not establish schema support. Real inference must be checked for the selected model with `npm run smoke:coach`. No model is selected implicitly when `NVIDIA_MODEL` is missing.
+
+### Self-hosted NVIDIA model in Brev
+
+`NVIDIA_DEPLOYMENT=hosted` is the default. The explicit `brev` mode supports `NVIDIA_MODEL=nvidia/NVIDIA-Nemotron-Nano-9B-v2` on the prepared vLLM gateway. An unrecognized deployment or a different Brev model fails to rules without contacting a provider; this does not silently claim that another vendor's model is NVIDIA. Contract v1 remains unchanged: successful NVIDIA-model inference returns `source: "nvidia"`, while the server prepends `Self-hosted NVIDIA model on Brev; this is not the NVIDIA-hosted API.` to `limitations` (keeping the array within its four-item bound). Show that provenance with the coach explanation. A failed inference still returns the honest `source: "rules"` fallback.
+
+The three existing server-only variables have the following meanings in this mode:
+
+- `NVIDIA_API_KEY`: the authentication token for **your own gateway**, not a Brev organization API key, NVIDIA account credential, or NIM hosted API key.
+- `NVIDIA_BASE_URL`: the gateway's externally reachable HTTPS URL ending in `/v1`. Brev mode requires an explicit URL and rejects the hosted `integrate.api.nvidia.com` address. Keep the token out of URLs. Browser-login redirects are rejected.
+- `NVIDIA_MODEL`: exactly `nvidia/NVIDIA-Nemotron-Nano-9B-v2` for this adapter.
+
+The provider sends vLLM's `response_format: { type: "json_schema", ... }`, requests greedy decoding and up to 800 output tokens, and puts `/no_think` in the system message. The [official NVIDIA model card](https://huggingface.co/nvidia/NVIDIA-Nemotron-Nano-9B-v2) documents the `/no_think` message switch; its template does not use the Qwen-style `enable_thinking` setting. Hosted Nemotron 3.5's `reasoning_effort` is not sent to the self-hosted Nano model. [vLLM documents JSON Schema output](https://docs.vllm.ai/en/latest/features/structured_outputs/). These request settings do not establish real latency or explanation quality: verify the running GPU endpoint after warm-up, then run the full application smoke. No real Brev inference has been verified by the offline tests.
+
+`npm run smoke:coach` loads production Next.js env precedence, makes a small direct request and validates exactly `{"ok":true}`. In Brev mode it uses the same model ID, gateway token, `/no_think`, and JSON Schema path. It prints only the result category, deployment kind and elapsed time; it does not print a response body or secrets. `npm run smoke` remains the proof for grounded coach schema and trace references, rather than just inference access.
 
 ## Public coach budget
 

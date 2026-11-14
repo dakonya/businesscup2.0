@@ -271,6 +271,84 @@ describe("grounded provider provenance and safe failure", () => {
   });
 });
 
+describe("self-hosted NVIDIA inference in Brev", () => {
+  const brev: CoachEnv = {
+    NVIDIA_DEPLOYMENT: "brev",
+    NVIDIA_API_KEY: "fixture-gateway-token-not-real",
+    NVIDIA_MODEL: "nvidia/NVIDIA-Nemotron-Nano-9B-v2",
+    NVIDIA_BASE_URL: "https://gateway.example.invalid/v1",
+  };
+  const provenance = "Self-hosted NVIDIA model on Brev; this is not the NVIDIA-hosted API.";
+
+  it("sends a bounded non-thinking vLLM JSON-schema request and keeps honest contract-v1 provenance", async () => {
+    const providerLimitations = ["A", "B", "C", "D"].map(label => `${label}: this is a simplified simulation.`);
+    const fetcher = vi.fn<typeof fetch>(async (url, init) => {
+      expect(String(url)).toBe("https://gateway.example.invalid/v1/chat/completions");
+      expect(init!.headers).toMatchObject({ Authorization: "Bearer fixture-gateway-token-not-real" });
+      expect(init!.redirect).toBe("error");
+      const payload = JSON.parse(init!.body as string);
+      expect(payload).toMatchObject({ model: brev.NVIDIA_MODEL, stream: false, max_tokens: 800, temperature: 0 });
+      expect(payload.response_format).toMatchObject({ type: "json_schema", json_schema: { name: "incidentlab_coach", strict: true, schema: { type: "object" } } });
+      expect(payload.messages[0].content).toContain("/no_think");
+      expect(payload).not.toHaveProperty("reasoning_effort");
+      expect(payload).not.toHaveProperty("chat_template_kwargs");
+      expect(init!.body).not.toContain("fixture-gateway-token-not-real");
+      return providerResponse({ ...coachContent(), limitations: providerLimitations });
+    });
+    const response = await createCoachHandler({ env: { ...brev, NVIDIA_API_KEY: ` ${brev.NVIDIA_API_KEY} ` }, fetcher })(request());
+    expect(response.status).toBe(200);
+    const body = await response.json() as CoachResponse;
+    expect(body.source).toBe("nvidia");
+    expect(body.warning).toBeUndefined();
+    expect(body.limitations).toEqual([provenance, ...providerLimitations.slice(0, 3)]);
+    expect(body.observations.flatMap(observation => observation.evidenceEventIds).every(id => facts.allowedIds.has(id))).toBe(true);
+    expect(JSON.stringify(body)).not.toContain("fixture-gateway-token-not-real");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [{ ...brev, NVIDIA_DEPLOYMENT: "other" }, "NVIDIA_DEPLOYMENT must be hosted or brev."],
+    [{ ...brev, NVIDIA_MODEL: "Qwen/Qwen3-8B" }, "requires the supported NVIDIA"],
+    [{ ...brev, NVIDIA_MODEL: "nvidia/unverified-model" }, "requires the supported NVIDIA"],
+    [{ ...brev, NVIDIA_BASE_URL: undefined }, "Missing configuration: NVIDIA_BASE_URL."],
+    [{ ...brev, NVIDIA_BASE_URL: "https://integrate.api.nvidia.com/v1" }, "NVIDIA_BASE_URL is invalid."],
+    [{ ...brev, NVIDIA_BASE_URL: "http://localhost:8000/v1" }, "NVIDIA_BASE_URL is invalid."],
+  ] as Array<[CoachEnv, string]>)("fails a misconfigured self-hosted deployment before any provider request %#", async (env, message) => {
+    const fetcher = vi.fn<typeof fetch>();
+    const result = await getCoach(input, facts, { env, fetcher });
+    expect(result.source).toBe("rules");
+    expect(result.warning).toContain(message);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("does not accept valid-looking JSON containing invented references from self-hosted inference", async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => providerResponse(coachContent(["primary:invented", "comparison:invented"])));
+    const result = await getCoach(input, facts, { env: brev, fetcher });
+    expect(result.source).toBe("rules");
+    expect(result.warning).toContain("Self-hosted Brev inference:");
+    expect(result.warning).toContain("invalid response");
+    expect(result.observations.flatMap(observation => observation.evidenceEventIds).every(id => facts.allowedIds.has(id))).toBe(true);
+  });
+
+  it("labels a gateway authentication failure without leaking its body or falling through to hosted NVIDIA", async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => new Response("fixture-gateway-token-not-real upstream details", { status: 401 }));
+    const result = await getCoach(input, facts, { env: brev, fetcher });
+    expect(result.source).toBe("rules");
+    expect(result.warning).toContain("Self-hosted Brev inference:");
+    expect(result.warning).toContain("HTTP 401");
+    expect(JSON.stringify(result)).not.toContain("fixture-gateway-token-not-real");
+    expect(JSON.stringify(result)).not.toContain("upstream details");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks supported deployment configuration presence without claiming a live GPU", () => {
+    expect(health(brev)).toEqual({ status: "ok", contractVersion: 1, coachConfigured: true });
+    expect(health({ ...brev, NVIDIA_MODEL: "Qwen/Qwen3-8B" }).coachConfigured).toBe(false);
+    expect(health({ ...brev, NVIDIA_BASE_URL: undefined }).coachConfigured).toBe(false);
+    expect(health({ ...brev, NVIDIA_DEPLOYMENT: "unknown" }).coachConfigured).toBe(false);
+  });
+});
+
 describe("honest hints and request limiting", () => {
   it("keeps first-level fallback hints focused on investigation without exposing a winning setting or mechanism", () => {
     const hint: CoachRequest = { ...input, mode: "hint", hintLevel: 1 };

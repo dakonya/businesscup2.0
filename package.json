@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "demo": "node scripts/demo.ts",
-    "smoke:coach": "node --env-file-if-exists=.env scripts/smoke-coach.mjs",
+    "smoke:coach": "node scripts/smoke-coach.mjs",
     "smoke": "node scripts/smoke.mjs"
   },
   "engines": {
