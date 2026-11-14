@@ -1,20 +1,17 @@
-# Конкурсный проект
+# IncidentLab
 
-- Условия конкурса: уточняются; нужно добавить официальные правила, сроки и критерии оценки.
-- Выбранный трек: Skills.
-- Команда: состав будет добавлен.
-- Идея: пока не определена.
+Browser-based on-call practice for individual developers preparing for their first rotation. Track: **Skills**. Scenario: **Catalog slowdown**. Logo: **IL**.
 
-## Минимальная подготовка
+## Bootstrap
 
-Локальный `.env` создан по шаблону [`.env.example`](./.env.example). Укажите в нём настоящий `NVIDIA_API_KEY`; `NVIDIA_MODEL` пока оставьте пустым. Для нового клона скопируйте шаблон командой `cp .env.example .env`.
+Use Node.js 24 LTS and npm. Run `npm ci`, then `npm run dev`. Open http://localhost:3000. Checks: `npm run typecheck`, `npm test`, `npm run build`; production: `npm start`.
 
-В GitHub отправляются `.gitignore`, `.env.example` и этот README. Локальный `.env` исключён из Git.
+Shared types: `src/lib/contracts.ts`. Frontend imports `getScenarios`, `simulateRun`, `compareRuns` from `@/lib/sim`. Bootstrap engine functions explicitly throw `EngineNotReadyError` until the engine implementation lands.
 
-Ключ должен храниться на сервере. Запросы к NVIDIA будут идти через серверную часть; ключ не должен попадать в браузер.
+Keep server configuration in the ignored `.env` (copy `.env.example` for a new clone). Required for NVIDIA coach: `NVIDIA_API_KEY`, `NVIDIA_MODEL`; default `NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1`. Never expose credentials through `NEXT_PUBLIC_` or the client. Simulation will run without AI configuration.
 
-После выбора модели, до разработки приложения, выполните один пробный запрос: проверьте доступ, задержку, нужные функции (например, структурированный ответ или вызов инструментов) и лимиты модели и аккаунта.
+## Contest context
 
-Hosted API NVIDIA поддерживает OpenAI-совместимый Chat Completions API. См. [документацию API](https://docs.api.nvidia.com/nim/reference/openai-gpt-oss-120b-infer) и [NVIDIA NIM FAQ](https://forums.developer.nvidia.com/t/nvidia-nim-faq/300317).
+Three-person team, 24-hour window; web-only B2C; public GitHub and production URL accessible without mandatory login; PDF up to 10 pages; 5-minute pitch + 2-minute Q&A. Scoring: product/engineering 40%, paid value/retention 20%, user/problem 15%, business 15%, originality 10%.
 
-Стек и зависимости выберем после идеи. Разработка приложения ещё не начата.
+Backend owns dependencies, contracts, simulation, server routes, engineering documentation, and relevant tests. Frontend owns pages, layouts, styles, components, browser state, public assets, UI tests, and demo docs after this bootstrap. Do not create a nested project or overwrite another contributor's changes.
