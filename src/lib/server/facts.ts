@@ -27,26 +27,26 @@ export function rulesCoach(input: CoachRequest, facts: Facts, warning: string): 
   const forKind = (kind: string, namespace = "primary") => evidence.filter(e => e.id.startsWith(`${namespace}:`) && e.kind === kind).map(e => e.id).slice(0, 2);
   const available = evidence.map(e => e.id).slice(0, 2);
   const observations: CoachResponse["observations"] = [{
-    text: `At ${input.untilMs} ms, ${primary.metrics.arrived} customers arrived: ${primary.metrics.succeeded} succeeded, ${primary.metrics.failed} failed, and ${primary.metrics.pending} are still pending. Pending customers are not failures.`,
+    text: `К отметке ${input.untilMs} мс поступило ${primary.metrics.arrived} запросов: успешных — ${primary.metrics.succeeded}, с ошибкой — ${primary.metrics.failed}, в ожидании — ${primary.metrics.pending}. Ожидающие запросы ещё не завершились.`,
     evidenceEventIds: (forKind("request-failed").length ? forKind("request-failed") : available),
   }];
   if (comparison && delta) observations.push({
-    text: `The comparison changes successes by ${delta.succeeded}, failures by ${delta.failed}, and database attempts by ${delta.totalAttempts}, under identical arrivals. Deltas are comparison minus primary.`,
+    text: `В сравниваемой попытке успешных ответов — ${comparison.metrics.succeeded}, ошибок — ${comparison.metrics.failed}, в ожидании — ${comparison.metrics.pending}. Разница с основной попыткой: успешные ответы ${delta.succeeded}, ошибки ${delta.failed}, обращения к базе ${delta.totalAttempts}. Поток запросов и время сравнения одинаковые.`,
     evidenceEventIds: [...available.slice(0, 1), ...evidence.filter(e => e.id.startsWith("comparison:")).map(e => e.id).slice(-1)],
   });
-  else if (lowHint) observations.push({ text: "Inspect customer outcomes over time and open one request trace around the first failure before choosing a control.", evidenceEventIds: available });
+  else if (lowHint) observations.push({ text: "Посмотри, когда появились первые ошибки, и открой историю запроса из этого периода.", evidenceEventIds: available });
   else observations.push({
-    text: input.mode === "debrief" ? `The run created ${primary.metrics.totalAttempts} database attempts, including ${primary.metrics.retries} retries. Timed-out database work continues; its late response cannot rescue that attempt.` : `The run has ${primary.metrics.retries} retries. Compare the first timeout and a later database completion for the same attempt.`,
+    text: input.mode === "debrief" ? `За прогон создано ${primary.metrics.totalAttempts} обращений к базе, из них ${primary.metrics.retries} — повторные. После тайм-аута база продолжает выполнять обращение, а его запоздалый результат отбрасывается.` : `Повторных обращений: ${primary.metrics.retries}. Сравни первый тайм-аут с более поздним завершением того же обращения к базе.`,
     evidenceEventIds: [...forKind("attempt-timeout").slice(0, 1), ...forKind("late-response").slice(0, 1)].length ? [...forKind("attempt-timeout").slice(0, 1), ...forKind("late-response").slice(0, 1)] : available,
   });
   if (comparison && !lowHint && input.mode === "debrief") observations.push({
-    text: `Primary created ${primary.metrics.retries} retries. Timed-out database work is retained, and late completion cannot restore a lost response. More API admission can add database pressure in this scenario.`,
+    text: `В основной попытке повторов — ${primary.metrics.retries}, очередь БД — ${primary.metrics.dbQueue}, активных операций — ${primary.metrics.dbActive}. В сравниваемой попытке повторов — ${comparison.metrics.retries}, очередь БД — ${comparison.metrics.dbQueue}, активных операций — ${comparison.metrics.dbActive}. Таймаут не отменяет работу БД. Пустая очередь не означает, что все запросы уже завершились.`,
     evidenceEventIds: [...forKind("attempt-timeout").slice(0, 1), ...forKind("late-response").slice(0, 1)].length ? [...forKind("attempt-timeout").slice(0, 1), ...forKind("late-response").slice(0, 1)] : available,
   });
   return {
-    source: "rules", summary: input.mode === "hint" ? "Use the observed customer outcomes to choose your next investigation step." : "This replay shows how admission, database capacity, and retries interact in this scenario.",
+    source: "rules", summary: input.mode === "hint" ? "Посмотри на результаты запросов и выбери, что проверить дальше." : "Разбор показывает, как настройки API и повторных обращений влияют на очередь в базе и ответы пользователям.",
     observations,
-    nextExperiment: lowHint ? "Pause at the first failed request and inspect its attempt timeline. Record one hypothesis before changing a control." : input.mode === "hint" && input.hintLevel === 2 ? "Change only one retry control at the checkpoint, then compare both runs at the same horizon and seed." : `Replay from the checkpoint with maximum attempts set to ${primary.controls.maxAttempts === 1 ? 2 : 1}. Keep the same seed and horizon; compare successes, failures, pending customers, and database attempts.`,
-    limitations: ["This is a simplified queueing simulation, not a prediction of production behavior.", "Latency statistics include successful customers only; read failures and pending counts alongside them.", ...(evidence.length ? [] : ["No trace events exist yet at this replay horizon."])], warning,
+    nextExperiment: lowHint ? "Останови прогон у первого запроса с ошибкой и изучи его историю. Запиши гипотезу, прежде чем менять настройки." : input.mode === "hint" && input.hintLevel === 2 ? "На контрольной точке измени одну настройку повторов. Сравни обе попытки на одной отметке времени и с тем же начальным числом." : `Вернись к контрольной точке и задай максимум попыток ${primary.controls.maxAttempts === 1 ? 2 : 1}. Оставь то же начальное число и сравни на одной отметке времени успешные ответы, ошибки, ожидающие запросы и обращения к базе.`,
+    limitations: ["Модель упрощает работу системы. По этим результатам нельзя предсказать поведение реального сервиса.", "Задержки рассчитаны только для успешных ответов. Учитывай также запросы с ошибкой и те, что ещё ждут ответа.", ...(evidence.length ? [] : ["К этой отметке времени событий ещё нет."])], warning,
   };
 }

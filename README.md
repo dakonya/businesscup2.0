@@ -1,61 +1,119 @@
 # IncidentLab
 
-Browser-based on-call practice for individual developers preparing for a first rotation. Track: **Skills**. First scenario: **Catalog slowdown**. Logo: **IL**.
+Браузерный тренажёр для первых дежурств разработчика. В кейсе **«Замедление каталога»** ты изучаешь метрики и историю запроса, меняешь настройки, возвращаешься к той же ситуации и сравниваешь два решения на одинаковом потоке запросов.
 
-## Install and run
+Рабочий интерфейс на русском: запуск кейса, пауза и скорость воспроизведения, полная история запроса, журнал изменений, независимые попытки A/B, сохранение в браузере, сравнение и помощник. Регистрация и подключение настоящей инфраструктуры не нужны. Монограмма продукта — **IL**.
 
-Use **Node.js 24 LTS** and npm:
+## Запуск
 
-```bash
+Нужны **Node.js 24 LTS** и npm. Из корня репозитория:
+
+```sh
 npm ci
-cp .env.example .env  # new clones only; preserve an existing .env
 npm run dev
 ```
 
-Open http://localhost:3000. The current homepage is the frontend handoff scaffold. The backend engine and API are implemented; the full interactive training UI belongs to the frontend integration.
+Открой [localhost:3000](http://localhost:3000). Файл `.env` для обычного запуска не требуется: движок работает локально, помощник по умолчанию составляет разбор по правилам. Существующие секреты и настройки GPU ради запуска сайта менять не нужно. `.env.example` — справочник необязательных серверных параметров, а не обязательный шаг установки.
 
-```bash
+Для готовой сборки:
+
+```sh
+npm run build
+npm start
+```
+
+Сайт и API будут доступны на [localhost:3000](http://localhost:3000).
+
+## Демо за 60–90 секунд
+
+Новая практика использует **сид 42**. В текущем определении сценария точка возврата — **00:20**, конец прогона — **02:00**; интерфейс берёт время и допустимые настройки из `ScenarioDefinition`.
+
+1. Нажми **«Начать практику»**. При скорости **4×** прогон сам остановится на **00:20** примерно через пять секунд.
+2. Выбери фильтр **«Ошибки»** и нажми **«Подробнее»** у одного из них. Посмотри его события: время на паузе не меняется.
+3. В **«Реплики API»** выбери **4** ровно на **00:20**. Нажми **«До конца»**, затем **«Сохранить попытку»**. Это попытка A.
+4. Нажми **«Новая попытка с 00:20»**. A сохранится целиком; B получит тот же сид и только решения строго до точки возврата. В **«Максимум попыток»** выбери **1**, затем **«До конца»**.
+5. Нажми **«Сравнить попытки»**. Обе стороны рассчитываются до одного момента — **120 секунд**.
+6. Нажми **«Разобрать сравнение»**. По умолчанию появится **«Разбор по правилам»** с предупреждением об источнике. Ссылки на события открывают нужную попытку и историю запроса.
+
+Результаты настоящего движка для этого эксперимента:
+
+| Показатель | A: 4 реплики API на 20 с | B: максимум 1 попытка на 20 с | B − A |
+| --- | ---: | ---: | ---: |
+| Запросы пользователей | 960 | 960 | 0 |
+| Успешные запросы | 120 | 709 | +589 |
+| Запросы с ошибкой | 800 | 248 | −552 |
+| Запросы в ожидании | 40 | 3 | −37 |
+| Попытки обращения к БД | 2 588 | 987 | −1 601 |
+
+Запрос в ожидании ещё не имеет результата. Смотри успешные ответы, ошибки и ожидание вместе: одно уменьшение числа обращений к БД не определяет лучший исход. Время ответа считается только для успешных запросов. Это учебная симуляция одного кейса; результаты не являются прогнозом для рабочей инфраструктуры или оценкой готовности к дежурствам.
+
+Подробный проход, реплики и порядок показа — в [сценарии демонстрации](docs/demo/runbook.md).
+
+## Помощник: правила по умолчанию
+
+Серверный параметр **`INCIDENTLAB_COACH_MODE=rules`** выбирает разбор по правилам. Если параметр не задан, используется тот же режим. Он не вызывает внешние модели и не запускает GPU, в том числе при наличии прежних NVIDIA-переменных в окружении. Основная тренировка и сравнение всегда рассчитываются движком и не зависят от помощника.
+
+Ответ по правилам возвращается с `source: "rules"`; интерфейс показывает **«Разбор по правилам»** и предупреждение. Это не ответ модели. Клиент отправляет на `POST /api/coach` сценарий, сид, журнал решений и момент сравнения; сервер сам пересчитывает результаты и подбирает события.
+
+Подключение реальной модели — отдельный будущий шаг, для которого нужно явно выбрать **`INCIDENTLAB_COACH_MODE=nvidia`**. Одного наличия NVIDIA-переменных для этого недостаточно. Поддерживаемые серверные параметры:
+
+| Параметр | Назначение при явно выбранном режиме `nvidia` |
+| --- | --- |
+| `NVIDIA_DEPLOYMENT` | `hosted` — NVIDIA-hosted API; `brev` — подготовленный собственный шлюз в Brev |
+| `NVIDIA_API_KEY` | Серверный ключ выбранного API или токен собственного шлюза для Brev |
+| `NVIDIA_BASE_URL` | HTTPS-адрес выбранного API; для Brev нужен явный адрес шлюза с `/v1` |
+| `NVIDIA_MODEL` | Явно выбранный идентификатор модели; для подготовленного Brev-варианта — `nvidia/NVIDIA-Nemotron-Nano-9B-v2` |
+
+Эти параметры остаются на сервере; `NEXT_PUBLIC_` для них не используется. Текущие секреты, GPU и конфигурацию провайдера для демонстрации в режиме правил менять не нужно. Существующее описание подготовленного Brev-развёртывания, закреплённой модели и ограничений сохранено в [документации Brev](docs/engineering/brev.md).
+
+При недоступности явно подключённой модели помощник возвращает разбор по правилам с предупреждением. Только прошедший проверку реальный ответ модели получает `source: "nvidia"` и подпись **«Разбор ИИ»**. Наличие конфигурации в `/api/health` не подтверждает доступность модели или точность её текста.
+
+## Проверки
+
+```sh
 npm run typecheck
 npm test
 npm run build
-npm start
 npm run demo
-npm run smoke
 ```
 
-`demo` runs the actual deterministic engine with seed 42 and prints two branch outcomes, deltas, trace sizes, and measured replay time. After a production build, `smoke` starts a temporary local production server and makes one real A/B coach request. It requires `source: "nvidia"`, the shared content schema, and valid branch-specific event IDs; HTTP 200 rules fallback fails the check. `INCIDENTLAB_SMOKE_URL=https://<actual-origin> npm run smoke` checks an existing published server instead. A successful check records a redacted report in ignored `.next/incidentlab-smoke.json`. Read the coach text against the printed metrics before claiming a grounded demo.
+`npm run demo` вызывает чистый локальный движок с сидом 42 и выводит результаты A/B, разницу, размеры истории и время расчёта. Внешняя модель ему не нужна. Тесты движка, API и клиентского состояния проверяют воспроизводимость, границы ветвления, учёт запросов и попыток, валидацию, ошибки и сохранение. Проверки провайдера с подставными ответами не подтверждают реальный ответ NVIDIA.
 
-The older `smoke:coach` is a small transport-only probe; it does not confirm a validated application coach. `health` reports configuration presence, not proven provider health. The latest live check found both NVIDIA variables present but the hosted request returned HTTP 401. See the [current Russian report](docs/engineering/report-ru.md) for the exact inference, integration, and hosting blockers.
+Скрипты `npm run smoke` и `npm run smoke:coach` предназначены для проверки **реального вызова модели**. Для запуска и проверки сайта в режиме правил они не нужны; они не входят в обычный локальный проход.
 
-On the current development machine, Node/npm were installed outside the repository. If they are absent from PATH:
+## Архитектура и файлы команды
 
-```bash
-export PATH=/home/dakonya/.local/share/incidentlab-node/bin:$PATH
-```
+- Один **Next.js App Router + TypeScript + npm** проект.
+- `src/lib/contracts.ts` — общий контракт v1.
+- `src/lib/sim` — чистый синхронный TypeScript-движок, общий для браузера и сервера. Основные экспорты: `getScenarios`, `simulateRun`, `compareRuns`.
+- `src/lib/server` и `src/app/api` — серверные обработчики `/api/coach` и `/api/health`, валидация, пересчёт фактов и проверка ссылок на события.
+- `src/lib/client`, `src/components` и `src/app` — интерфейс, управление модельным временем и безопасное чтение сохранений. В браузере хранится сценарий, сид, журнал и позиция времени; полная история событий пересчитывается.
 
-## Server configuration
+Для симуляции не нужны настоящая БД, очередь сообщений, VM или Docker-кластер. Движок вычисляет очереди, таймауты, повторы и исходы отдельных запросов. График берётся из `RunView.series`, сравнение — из `compareRuns`; заранее нарисованных результатов нет.
 
-| Variable | Purpose |
+| Участник | Файлы |
 | --- | --- |
-| `NVIDIA_API_KEY` | Server-side NVIDIA credential |
-| `NVIDIA_BASE_URL` | Default: `https://integrate.api.nvidia.com/v1` |
-| `NVIDIA_MODEL` | Explicit hosted model ID; no implicit paid-provider/model selection |
+| Бэкенд / интеграция | Зависимости и общие конфиги, контракт, `src/lib/sim`, `src/lib/server`, `src/app/api`, тесты движка/API, инженерная документация |
+| Фронтенд / демо | Страницы и стили, `src/components`, `src/lib/client`, `public`, UI-тесты, `docs/demo` |
+| Продукт / питч | `docs/product`, `docs/pitch`, презентация и реестр доказательств |
 
-Keep credentials in ignored `.env` files or the hosting platform's server environment. Never use a `NEXT_PUBLIC_` credential. No database or additional service is required. Missing configuration, timeout, rate limiting, or invalid provider output produces a clearly labeled `source: "rules"` analysis. The engine does not require AI.
+Общий bootstrap — `setup/incidentlab`, реализация движка — `feat/engine-coach`, интерфейс — `feat/ui-demo`. Используй обычное слияние веток и согласуй изменения контракта с другим разработчиком. Второй проект в корне не создаётся, чужие ветки и история не переписываются.
 
-## Architecture and handoff
+## Размещение
 
-- `src/lib/contracts.ts`: authoritative contract v1, unchanged from the supplied handoff.
-- `src/lib/sim`: pure, synchronous TypeScript replay shared by browser and server; exports `getScenarios`, `simulateRun`, `compareRuns`, plus validation/fork helpers.
-- `src/lib/server` and `src/app/api`: stateless health/coach handlers. Coach validates the journal, recomputes results, selects bounded evidence, and validates provider JSON and namespaced event IDs.
-- Browser persistence: scenario + seed + ordered actions + cursor. Frontend owns guarded localStorage decoding and the full user flow.
+Нужен Node-сервер с поддержкой Next.js: статический экспорт не обслужит `/api/coach` и `/api/health`. Локальный вариант — `npm run build` и `npm start`.
 
-The model computes admission, database queues, timeouts, uncancelled work, retries, and unique customer outcomes. It is a bounded teaching simulation, not real infrastructure or a readiness assessment. Latency statistics describe successful responses only. Read failed and pending counts alongside them. API scaling may increase database pressure in this case; this is not a universal tuning rule.
+В репозитории подготовлены `vercel.json` и `.vercelignore`. Они не означают, что сайт уже опубликован: предыдущая попытка создать Vercel-проект завершилась **HTTP 403** из-за прав подключённой учётной записи. Публичный деплой и адрес тогда не были созданы. Подробности настройки и ограничений — в [документации запуска и размещения](docs/engineering/operations.md).
 
-[Model and measured demo](docs/engineering/model.md) · [Frontend/product handoff](docs/engineering/handoff.md) · [HTTP and coach limits](docs/engineering/api.md) · [Versions, verification, and deployment](docs/engineering/operations.md)
+## Документация
 
-Bootstrap branch: `setup/incidentlab`, commit `78c615b41ac57698beb0426bd36f6594b1a5ba2f`. Backend implementation: `feat/engine-coach`. Frontend owns pages, layouts, styles, components, browser state, assets, UI tests, and demo docs after bootstrap. Backend owns dependencies, contract, simulation, server routes, engineering docs, and associated tests. Do not create a nested project or overwrite another contributor's work.
+- [Сценарий демонстрации](docs/demo/runbook.md)
+- [Модель и измеренные результаты](docs/engineering/model.md)
+- [Контракт и передача фронтенду](docs/engineering/handoff.md)
+- [HTTP API и ограничения помощника](docs/engineering/api.md)
+- [Версии, проверки и размещение](docs/engineering/operations.md)
+- [Подготовленный вариант с NVIDIA в Brev](docs/engineering/brev.md)
 
-## Contest context supplied by the team
+## Контекст конкурса
 
-Three-person team, 24-hour build; web-only B2C; public GitHub and a production URL accessible without mandatory login; PDF up to 10 pages; 5-minute pitch + 2-minute Q&A. Weights: product/engineering 40%, paid value/retention 20%, user/problem 15%, business 15%, originality 10%. These are supplied requirements, not independently verified official rules.
+По командному брифу: три участника, 24 часа, только веб, направление **Skills**; публичный GitHub и доступный жюри сайт без регистрации, PDF до 10 страниц, выступление 5 минут и вопросы 2 минуты. Веса оценки: продукт/инженерия 40%, ценность/удержание 20%, пользователь/проблема 15%, бизнес 15%, оригинальность 10%. Это условия из переданного брифа, а не независимая проверка официального регламента.

@@ -42,7 +42,7 @@ it.each([
   try {
     const result = await runFile(process.execPath, [smokeScript], {
       cwd: directory, timeout: 5_000, maxBuffer: 128_000,
-      env: { ...process.env, INCIDENTLAB_SMOKE_URL: `http://127.0.0.1:${address.port}`, NVIDIA_API_KEY: "fixture-private-value", NVIDIA_MODEL: "fixture-model", NVIDIA_DEPLOYMENT: deployment },
+      env: { ...process.env, INCIDENTLAB_COACH_MODE: "nvidia", INCIDENTLAB_SMOKE_URL: `http://127.0.0.1:${address.port}`, NVIDIA_API_KEY: "fixture-private-value", NVIDIA_MODEL: "fixture-model", NVIDIA_DEPLOYMENT: deployment },
     }).then(value => ({ code: 0, ...value }), error => ({ code: error.code, stdout: error.stdout as string, stderr: error.stderr as string }));
     expect(result.code).toBe(1);
     expect(result.stderr).toContain(expected);
@@ -59,7 +59,7 @@ it.each(["hosted", "brev"] as const)("validates a complete %s fixture and writes
   const primary = { schemaVersion: 1 as const, scenarioId: "catalog-slowdown" as const, seed: 42, actions: [{ atMs: 20_000, type: "set-api-replicas" as const, value: 4 }] };
   const comparison = { ...primary, actions: [{ atMs: 20_000, type: "set-max-attempts" as const, value: 1 }] };
   const runs = compareRuns(primary, comparison, 120_000);
-  const reply = { source: "nvidia", ...content, ...(deployment === "brev" ? { limitations: ["Self-hosted NVIDIA model on Brev; this is not the NVIDIA-hosted API.", ...content.limitations] } : {}), observations: [
+  const reply = { source: "nvidia", ...content, ...(deployment === "brev" ? { limitations: ["Модель NVIDIA работает на Brev. Это отдельный сервер, а не hosted API NVIDIA.", ...content.limitations] } : {}), observations: [
     { text: "Fixture primary event.", evidenceEventIds: [`primary:${runs.left.events[0].id}`] },
     { text: "Fixture comparison event.", evidenceEventIds: [`comparison:${runs.right.events[0].id}`] },
   ] };
@@ -76,13 +76,14 @@ it.each(["hosted", "brev"] as const)("validates a complete %s fixture and writes
   try {
     await runFile(process.execPath, [smokeScript], {
       cwd: directory, timeout: 5_000, maxBuffer: 128_000,
-      env: { ...process.env, INCIDENTLAB_SMOKE_URL: `http://127.0.0.1:${address.port}`, NVIDIA_API_KEY: "fixture-private-value", NVIDIA_MODEL: "fixture-model", NVIDIA_DEPLOYMENT: deployment },
+      env: { ...process.env, INCIDENTLAB_COACH_MODE: "nvidia", INCIDENTLAB_SMOKE_URL: `http://127.0.0.1:${address.port}`, NVIDIA_API_KEY: "fixture-private-value", NVIDIA_MODEL: "fixture-model", NVIDIA_DEPLOYMENT: deployment },
     });
     const path = join(directory, ".next", "incidentlab-smoke.json");
     const text = await readFile(path, "utf8"); const report = JSON.parse(text);
     expect(report).toMatchObject({ deployment, schemaValidated: true, evidenceValidated: true, evidenceNamespaces: ["primary", "comparison"], seed: 42, untilMs: 120_000, primaryMetrics: runs.left.metrics, comparisonMetrics: runs.right.metrics });
     expect(text).not.toContain("fixture-private-value");
-    expect((await stat(path)).mode & 0o777).toBe(0o600);
+    // Windows does not expose the POSIX permission bits used by mode: 0600.
+    if (process.platform !== "win32") expect((await stat(path)).mode & 0o777).toBe(0o600);
     expect(coachCalls).toBe(1);
   } finally {
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));

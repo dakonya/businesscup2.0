@@ -4,9 +4,11 @@ The authority for request and response types is `src/lib/contracts.ts`; this doc
 
 ## GET /api/health
 
-Returns HTTP 200 and `HealthResponse`: `status: "ok"`, `contractVersion: 1`, and `coachConfigured`. The boolean checks nonblank `NVIDIA_API_KEY` and `NVIDIA_MODEL` and a recognized deployment setting. Brev also requires its explicit base URL and the supported Nano 9B model ID. It does not validate network access, call the model, or prove inference health. It exposes no secret values.
+Returns HTTP 200 and `HealthResponse`: `status: "ok"`, `contractVersion: 1`, and `coachConfigured`. The boolean requires explicit `INCIDENTLAB_COACH_MODE=nvidia`, nonblank `NVIDIA_API_KEY` and `NVIDIA_MODEL`, and a recognized deployment setting. Brev also requires its explicit base URL and the supported Nano 9B model ID. It does not validate network access, call the model, or prove inference health. It exposes no secret values.
 
 ## POST /api/coach
+
+Demo mode is `INCIDENTLAB_COACH_MODE=rules`, also used when the server parameter is absent. It returns the computed Russian rules recap with `source: "rules"` and a visible warning that NVIDIA requests are disabled, even if NVIDIA credentials already exist. Only the explicit server opt-in `INCIDENTLAB_COACH_MODE=nvidia` reaches hosted/Brev inference. This setting is separate from the request's `mode: "hint" | "debrief"`; clients cannot override the server's demo mode.
 
 Send JSON matching `CoachRequest`:
 

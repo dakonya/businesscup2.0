@@ -6,33 +6,37 @@ import { rulesCoach } from "./facts";
 import { readBoundedBody } from "./http";
 import { coachContentSchema } from "./validation";
 
-export type CoachEnv = { NVIDIA_API_KEY?: string; NVIDIA_BASE_URL?: string; NVIDIA_MODEL?: string; NVIDIA_DEPLOYMENT?: string };
+export type CoachEnv = { NVIDIA_API_KEY?: string; NVIDIA_BASE_URL?: string; NVIDIA_MODEL?: string; NVIDIA_DEPLOYMENT?: string; INCIDENTLAB_COACH_MODE?: string };
 const BREV_MODEL = "nvidia/NVIDIA-Nemotron-Nano-9B-v2";
-const BREV_PROVENANCE = "Self-hosted NVIDIA model on Brev; this is not the NVIDIA-hosted API.";
+const BREV_PROVENANCE = "Модель NVIDIA работает на Brev. Это отдельный сервер, а не hosted API NVIDIA.";
 export function serverEnv(): CoachEnv {
-  return { NVIDIA_API_KEY: process.env.NVIDIA_API_KEY, NVIDIA_BASE_URL: process.env.NVIDIA_BASE_URL, NVIDIA_MODEL: process.env.NVIDIA_MODEL, NVIDIA_DEPLOYMENT: process.env.NVIDIA_DEPLOYMENT };
+  return { NVIDIA_API_KEY: process.env.NVIDIA_API_KEY, NVIDIA_BASE_URL: process.env.NVIDIA_BASE_URL, NVIDIA_MODEL: process.env.NVIDIA_MODEL, NVIDIA_DEPLOYMENT: process.env.NVIDIA_DEPLOYMENT, INCIDENTLAB_COACH_MODE: process.env.INCIDENTLAB_COACH_MODE };
 }
 export function health(env: CoachEnv = serverEnv()): HealthResponse {
   const deployment = env.NVIDIA_DEPLOYMENT?.trim() || "hosted";
   const supported = deployment === "hosted" || deployment === "brev" && env.NVIDIA_MODEL?.trim() === BREV_MODEL && Boolean(env.NVIDIA_BASE_URL?.trim());
-  return { status: "ok", contractVersion: 1, coachConfigured: Boolean(env.NVIDIA_API_KEY?.trim() && env.NVIDIA_MODEL?.trim() && supported) };
+  return { status: "ok", contractVersion: 1, coachConfigured: Boolean(env.INCIDENTLAB_COACH_MODE?.trim() === "nvidia" && env.NVIDIA_API_KEY?.trim() && env.NVIDIA_MODEL?.trim() && supported) };
 }
 export async function getCoach(input: CoachRequest, facts: Facts, options: { env?: CoachEnv; fetcher?: typeof fetch; timeoutMs?: number } = {}): Promise<CoachResponse> {
   const env = options.env ?? serverEnv();
+  const mode = env.INCIDENTLAB_COACH_MODE?.trim() || "rules";
+  if (mode !== "nvidia") return rulesCoach(input, facts, mode === "rules"
+    ? "Демо-режим: разбор по правилам. Запросы к NVIDIA отключены."
+    : "Режим помощника не распознан. Разбор составлен по правилам.");
   const deployment = env.NVIDIA_DEPLOYMENT?.trim() || "hosted";
-  if (deployment !== "hosted" && deployment !== "brev") return rulesCoach(input, facts, "NVIDIA_DEPLOYMENT must be hosted or brev.");
+  if (deployment !== "hosted" && deployment !== "brev") return rulesCoach(input, facts, "Неизвестный способ подключения NVIDIA. Разбор составлен по правилам.");
   const isBrev = deployment === "brev";
   const model = env.NVIDIA_MODEL?.trim();
   const missing = [!env.NVIDIA_API_KEY?.trim() && "NVIDIA_API_KEY", !model && "NVIDIA_MODEL", isBrev && !env.NVIDIA_BASE_URL?.trim() && "NVIDIA_BASE_URL"].filter(Boolean);
-  if (missing.length) return rulesCoach(input, facts, `Missing configuration: ${missing.join(", ")}.`);
-  if (isBrev && model !== BREV_MODEL) return rulesCoach(input, facts, "Brev deployment requires the supported NVIDIA Nemotron Nano 9B v2 model.");
-  if (facts.evidence.length < 2) return rulesCoach(input, facts, "Not enough trace evidence yet for a grounded provider response.");
+  if (missing.length) return rulesCoach(input, facts, "ИИ-помощник не настроен. Разбор составлен по правилам на основе этого прогона.");
+  if (isBrev && model !== BREV_MODEL) return rulesCoach(input, facts, "Для Brev нужна модель NVIDIA Nemotron Nano 9B v2. Разбор составлен по правилам.");
+  if (facts.evidence.length < 2) return rulesCoach(input, facts, "Пока недостаточно событий для ответа ИИ. Разбор составлен по правилам.");
   let base: URL;
   try {
     base = new URL((env.NVIDIA_BASE_URL?.trim() || "https://integrate.api.nvidia.com/v1").replace(/\/$/, "") + "/chat/completions");
     if (base.protocol !== "https:" || base.username || base.password || base.search || base.hash) throw new Error();
     if (isBrev && base.hostname === "integrate.api.nvidia.com") throw new Error();
-  } catch { return rulesCoach(input, facts, "NVIDIA_BASE_URL is invalid."); }
+  } catch { return rulesCoach(input, facts, "Не удалось подключить ИИ. Разбор составлен по правилам."); }
   const evidence = isBrev ? ["primary", "comparison"].flatMap(namespace => {
     const branch = facts.evidence.filter(event => event.id.startsWith(`${namespace}:`));
     const selected = branch.slice(0, 2);
@@ -77,15 +81,18 @@ export async function getCoach(input: CoachRequest, facts: Facts, options: { env
     const observations = responseSchema.properties!.observations as { items: { properties: { evidenceEventIds: { items: { enum?: string[] } } } } };
     observations.items.properties.evidenceEventIds.items.enum = allowedEvidenceEventIds;
   }
+  const languageInstructions = "All user-facing text (summary, observations.text, nextExperiment, limitations) must be concise Russian. Keep schema keys and evidence event IDs unchanged. Use plain, natural Russian. Address the learner informally as ты when giving an instruction. Write connected, concrete explanations, without marketing language, metaphors, slang, or terse slogans. Keep every claim grounded in the supplied facts.";
   const prompt = isBrev ? [
     "/no_think",
     "You are IncidentLab's grounded training coach. Return one bare JSON object matching the response schema. No Markdown. Be brief: summary under 35 words, each observation under 25 words, each limitation under 20 words.",
+    languageInstructions,
     "Use only the supplied metrics and events. Succeeded, failed and pending are separate states. A zero final queue means no queued work remains, not zero pending. Compare branches at the same horizon; do not invent before/after changes.",
     "Write exactly two observations. Compare customer outcomes, then queue/retry behavior. Copy supplied event IDs only into evidenceEventIds, never into prose. Do not invent IDs, numbers or causal guarantees.",
     input.mode === "hint" ? `Hint level ${input.hintLevel ?? 1}: level 1 asks for inspection without mechanism or winning settings; level 2 points to timing without a winning value; level 3 suggests one experiment.` : "Explain the observed queue/retry mechanism concisely.",
     "Suggest one future experiment using an available control value. Name the starting branch and frame it as a hypothesis, not a promise. Limitations describe simulation assumptions and latency statistics covering successes only. Do not compare branch outcomes in limitations.",
   ].join("\n") : [
-    "You are IncidentLab's grounded on-call training coach. Return exactly one bare JSON object matching the supplied schema, in concise English. Do not use Markdown, backticks or code fences. Put every explanation inside the JSON object.",
+    "You are IncidentLab's grounded on-call training coach. Return exactly one bare JSON object matching the supplied schema. Do not use Markdown, backticks or code fences. Put every explanation inside the JSON object.",
+    languageInstructions,
     "Use only supplied replay facts. Provide 2 or 3 observations, each citing 1-3 supplied event IDs with their primary: or comparison: namespace. Cite only supplied IDs. Do not invent measurements or readiness scores, personality diagnoses, or employment predictions. Never change the simulation.",
     input.mode === "hint" ? `Hint mode level ${input.hintLevel ?? 1}. Level 1: ask the learner to inspect outcomes and traces; do not reveal the root cause or a winning setting. Level 2: point to timing and retry evidence without giving a winning value. Level 3: suggest one testable control change. Do not disclose mechanics beyond the current hint level.` : "Debrief mode: explain observed queueing and retry mechanisms, distinguish attempted operations from unique customers, and pending from failed.",
     "Offer exactly one next experiment. State the simulation's limits and successful-only latency bias. Evidence IDs support observations; numeric totals come from metrics, never estimates.",
@@ -118,6 +125,8 @@ export async function getCoach(input: CoachRequest, facts: Facts, options: { env
       if (typeof content !== "string" || content.length > 6_000) throw new Error("invalid");
       const parsed = coachContentSchema.safeParse(JSON.parse(content));
       if (!parsed.success || parsed.data.observations.some(o => o.evidenceEventIds.some(id => !allowedEvidenceIds.has(id)))) throw new Error("invalid");
+      const userText = [parsed.data.summary, ...parsed.data.observations.map(o => o.text), parsed.data.nextExperiment, ...parsed.data.limitations];
+      if (userText.some(text => !/[А-Яа-яЁё]/.test(text))) throw new Error("invalid");
       // Reject forbidden categories even when syntactically valid. This is a conservative check, not semantic fact verification.
       if (/readiness\s*(score|percentage)|\b\d+\s*%|employability|personality diagnosis/i.test(JSON.stringify(parsed.data))) throw new Error("invalid");
       const limitations = isBrev ? [BREV_PROVENANCE, ...parsed.data.limitations.filter(text => text !== BREV_PROVENANCE)].slice(0, 4) : parsed.data.limitations;
@@ -126,7 +135,7 @@ export async function getCoach(input: CoachRequest, facts: Facts, options: { env
     return result;
   } catch (error) {
     const reason = error instanceof Error ? error.message : "unavailable";
-    const warning = reason === "timeout" || controller.signal.aborted ? "NVIDIA timed out; showing a deterministic rules analysis." : reason === "authentication" ? "NVIDIA authentication failed (HTTP 401); showing a deterministic rules analysis." : reason === "access-denied" ? "NVIDIA access denied (HTTP 403); check account/model permissions. Showing a deterministic rules analysis." : reason === "rate-limited" ? "NVIDIA rate limit reached; showing a deterministic rules analysis." : reason === "invalid" || error instanceof SyntaxError ? "NVIDIA returned an invalid response; showing a deterministic rules analysis." : "NVIDIA is unavailable; showing a deterministic rules analysis.";
-    return rulesCoach(input, facts, isBrev ? `Self-hosted Brev inference: ${warning}` : warning);
+    const warning = reason === "timeout" || controller.signal.aborted ? "ИИ не ответил вовремя. Разбор составлен по правилам." : reason === "authentication" ? "NVIDIA отклонила авторизацию (HTTP 401). Разбор составлен по правилам." : reason === "access-denied" ? "NVIDIA запретила доступ (HTTP 403). Разбор составлен по правилам." : reason === "rate-limited" ? "Лимит запросов к ИИ исчерпан. Разбор составлен по правилам." : reason === "invalid" || error instanceof SyntaxError ? "Ответ ИИ не прошёл проверку. Разбор составлен по правилам." : "ИИ недоступен. Разбор составлен по правилам.";
+    return rulesCoach(input, facts, isBrev ? `Сервер Brev: ${warning}` : warning);
   } finally { if (timer) clearTimeout(timer); }
 }
