@@ -1,0 +1,110 @@
+{
+  "checkedAt": "2026-11-14T15:16:16.326Z",
+  "target": "local-production",
+  "source": "nvidia",
+  "deployment": "brev",
+  "elapsedMs": 7099,
+  "schemaValidated": true,
+  "evidenceValidated": true,
+  "evidenceNamespaces": [
+    "primary",
+    "comparison"
+  ],
+  "seed": 42,
+  "untilMs": 120000,
+  "primaryMetrics": {
+    "arrived": 960,
+    "succeeded": 120,
+    "failed": 800,
+    "pending": 40,
+    "totalAttempts": 2588,
+    "retries": 1632,
+    "apiQueue": 6,
+    "dbQueue": 1355,
+    "dbActive": 4,
+    "avgLatencyMs": 352.96666666666664,
+    "p95LatencyMs": 394
+  },
+  "comparisonMetrics": {
+    "arrived": 960,
+    "succeeded": 709,
+    "failed": 248,
+    "pending": 3,
+    "totalAttempts": 987,
+    "retries": 27,
+    "apiQueue": 0,
+    "dbQueue": 0,
+    "dbActive": 3,
+    "avgLatencyMs": 359.5726375176305,
+    "p95LatencyMs": 397
+  },
+  "delta": {
+    "succeeded": 589,
+    "failed": -552,
+    "totalAttempts": -1601
+  },
+  "coach": {
+    "source": "nvidia",
+    "summary": "Comparison branch achieved 589 more successes by reducing API replicas and max attempts, but increased failures.",
+    "observations": [
+      {
+        "text": "Comparison branch succeeded 589 more requests by lowering API replicas to 2 and max attempts to 1, but failed 552 fewer.",
+        "evidenceEventIds": [
+          "primary:request-succeeded:r0000/a1:0",
+          "comparison:request-succeeded:r0000/a1:0"
+        ]
+      },
+      {
+        "text": "Comparison branch cleared queues by stricter controls, but active database work remained at 3 pending.",
+        "evidenceEventIds": [
+          "primary:db-recovered:23000:0",
+          "comparison:db-recovered:23000:0"
+        ]
+      }
+    ],
+    "nextExperiment": "Test retry-backoff=0 on primary branch to reduce retry delays.",
+    "limitations": [
+      "Self-hosted NVIDIA model on Brev; this is not the NVIDIA-hosted API.",
+      "Simulation assumes database slowdown factor remains constant after recovery.",
+      "Latency stats exclude failed attempts and timed-out responses."
+    ]
+  },
+  "provider": {
+    "httpStatus": 200,
+    "elapsedMs": 7025,
+    "finishReason": "stop",
+    "usage": {
+      "prompt_tokens": 2270,
+      "total_tokens": 2506,
+      "completion_tokens": 236,
+      "prompt_tokens_details": null
+    },
+    "schemaValid": true,
+    "invalidEvidenceIds": []
+  },
+  "semanticReview": {
+    "passed": false,
+    "findings": [
+      "Summary says increased failures although comparison has 552 fewer failed customers.",
+      "The assertion that database slowdown remains constant after recovery is unsupported."
+    ],
+    "note": "The generated response is preserved verbatim. Structural smoke success confirms inference, not semantic correctness."
+  },
+  "shutdown": {
+    "machine": "incidentlab-coach",
+    "id": "vklyxhkb4",
+    "status": "stopped",
+    "startingCreditsCents": 933,
+    "remainingCreditsCents": 792,
+    "observedSpendCents": 141,
+    "topUpAmount": 0,
+    "monitorElapsedSeconds": 3058,
+    "hourlyRateIncludingDiskUsd": 1.790688,
+    "durationEstimateUsd": 1.5211,
+    "confirmedAt": "2026-11-14T15:18:08.344686+00:00",
+    "containersStopped": true,
+    "newMachinesCreated": false,
+    "budgetUsd": 3,
+    "billingNote": "Observed wallet debit may lag settlement. Duration estimate is a conservative elapsed-time estimate, not a final invoice."
+  }
+}

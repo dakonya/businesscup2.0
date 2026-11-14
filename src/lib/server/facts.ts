@@ -31,7 +31,7 @@ export function rulesCoach(input: CoachRequest, facts: Facts, warning: string): 
     evidenceEventIds: (forKind("request-failed").length ? forKind("request-failed") : available),
   }];
   if (comparison && delta) observations.push({
-    text: `Разница между сравниваемой и основной попыткой: успешные ответы ${delta.succeeded}, ошибки ${delta.failed}, обращения к базе ${delta.totalAttempts}. В обеих попытках использован один и тот же поток запросов.`,
+    text: `В сравниваемой попытке успешных ответов — ${comparison.metrics.succeeded}, ошибок — ${comparison.metrics.failed}, в ожидании — ${comparison.metrics.pending}. Разница с основной попыткой: успешные ответы ${delta.succeeded}, ошибки ${delta.failed}, обращения к базе ${delta.totalAttempts}. Поток запросов и время сравнения одинаковые.`,
     evidenceEventIds: [...available.slice(0, 1), ...evidence.filter(e => e.id.startsWith("comparison:")).map(e => e.id).slice(-1)],
   });
   else if (lowHint) observations.push({ text: "Посмотри, когда появились первые ошибки, и открой историю запроса из этого периода.", evidenceEventIds: available });
@@ -40,7 +40,7 @@ export function rulesCoach(input: CoachRequest, facts: Facts, warning: string): 
     evidenceEventIds: [...forKind("attempt-timeout").slice(0, 1), ...forKind("late-response").slice(0, 1)].length ? [...forKind("attempt-timeout").slice(0, 1), ...forKind("late-response").slice(0, 1)] : available,
   });
   if (comparison && !lowHint && input.mode === "debrief") observations.push({
-    text: `В основной попытке было ${primary.metrics.retries} повторных обращений. Обращения остаются в очереди или продолжают выполняться даже после тайм-аута. Если API допускает больше обращений одновременно, нагрузка на базу в этом сценарии может вырасти.`,
+    text: `В основной попытке повторов — ${primary.metrics.retries}, очередь БД — ${primary.metrics.dbQueue}, активных операций — ${primary.metrics.dbActive}. В сравниваемой попытке повторов — ${comparison.metrics.retries}, очередь БД — ${comparison.metrics.dbQueue}, активных операций — ${comparison.metrics.dbActive}. Таймаут не отменяет работу БД. Пустая очередь не означает, что все запросы уже завершились.`,
     evidenceEventIds: [...forKind("attempt-timeout").slice(0, 1), ...forKind("late-response").slice(0, 1)].length ? [...forKind("attempt-timeout").slice(0, 1), ...forKind("late-response").slice(0, 1)] : available,
   });
   return {

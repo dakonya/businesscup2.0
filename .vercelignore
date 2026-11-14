@@ -1,0 +1,13 @@
+# Local secrets are configured separately in the hosting server environment.
+.env
+.env.*
+!.env.example
+.git/
+.vercel/
+node_modules/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+# Preserve the pre-existing local nested clone, but never upload it.
+businesscup2.0/

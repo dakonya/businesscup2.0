@@ -68,7 +68,8 @@ try {
     await page.getByRole("button", { name: "Разобрать сравнение" }).click();
     await page.locator(".coach-source").waitFor({ timeout: 25000 });
     const source = await page.locator(".coach-source").innerText();
-    assert.ok(["Разбор по правилам", "Разбор ИИ"].includes(source));
+    assert.equal(source, "Разбор по правилам");
+    assert.equal(await page.locator(".coach-warning").innerText(), "Демо-режим: разбор по правилам. Запросы к NVIDIA отключены.");
     assert.doesNotMatch(await page.locator("main").innerText(), /\b(?:Start practice|Catalog slowdown|Successful|Failed|Pending|Database|Request explorer|Rule-based recap|Evidence|Maximum attempts|Retry coach)\b/);
     report.push(`coach source: ${source}`);
     await page.getByRole("button", { name: /Попытка B · Событие/ }).first().click();

@@ -3,6 +3,7 @@ import type { CoachRequest, CoachResponse } from "../../src/lib/contracts";
 import { createCoachHandler, MAX_BODY_BYTES } from "../../src/lib/server/coach-handler";
 import { buildFacts, rulesCoach } from "../../src/lib/server/facts";
 import { createLimiter } from "../../src/lib/server/limits";
+import { getScenarios } from "../../src/lib/sim";
 import { getCoach, health, type CoachEnv } from "../../src/lib/server/provider";
 import { GET as healthRoute } from "../../src/app/api/health/route";
 import { POST as coachRoute } from "../../src/app/api/coach/route";
@@ -11,7 +12,7 @@ const input: CoachRequest = {
   mode: "debrief", untilMs: 30_000,
   primary: { schemaVersion: 1, scenarioId: "catalog-slowdown", seed: 42, actions: [] },
 };
-const configured: CoachEnv = { NVIDIA_API_KEY: "fixture-key-not-real", NVIDIA_MODEL: "openai/gpt-oss-120b" };
+const configured: CoachEnv = { INCIDENTLAB_COACH_MODE: "nvidia", NVIDIA_API_KEY: "fixture-key-not-real", NVIDIA_MODEL: "openai/gpt-oss-120b" };
 const facts = buildFacts(input);
 const ids = [...facts.allowedIds];
 function coachContent(evidenceIds = ids.slice(0, 2)) {
@@ -41,6 +42,29 @@ async function checkFallback(response: Response) {
 }
 
 describe("coach input, byte limits, and configuration", () => {
+  it.each([
+    {},
+    { ...configured, INCIDENTLAB_COACH_MODE: undefined },
+    { ...configured, INCIDENTLAB_COACH_MODE: "rules" },
+  ] as CoachEnv[])("keeps default and explicit demo mode local even with provider credentials %#", async env => {
+    const fetcher = vi.fn<typeof fetch>();
+    const response = await checkFallback(await createCoachHandler({ env, fetcher })(request()));
+    expect(response.warning).toBe("Демо-режим: разбор по правилам. Запросы к NVIDIA отключены.");
+    expect(response.source).toBe("rules");
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(health(env).coachConfigured).toBe(false);
+  });
+
+  it("rejects an unknown coach mode without contacting a configured provider", async () => {
+    const env = { ...configured, INCIDENTLAB_COACH_MODE: "unknown" };
+    const fetcher = vi.fn<typeof fetch>();
+    const response = await getCoach(input, facts, { env, fetcher });
+    expect(response.source).toBe("rules");
+    expect(response.warning).toBe("Режим помощника не распознан. Разбор составлен по правилам.");
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(health(env).coachConfigured).toBe(false);
+  });
+
   it("rejects malformed JSON without contacting the provider", async () => {
     const fetcher = vi.fn<typeof fetch>();
     const handler = createCoachHandler({ env: configured, fetcher });
@@ -120,7 +144,7 @@ describe("coach input, byte limits, and configuration", () => {
     [{ NVIDIA_API_KEY: " ", NVIDIA_MODEL: " " }, ["NVIDIA_API_KEY", "NVIDIA_MODEL"]],
   ] as Array<[CoachEnv, string[]]>)("uses a deterministic fallback for missing configuration %#", async (env, missing) => {
     const fetcher = vi.fn<typeof fetch>();
-    const handler = createCoachHandler({ env, fetcher });
+    const handler = createCoachHandler({ env: { ...env, INCIDENTLAB_COACH_MODE: "nvidia" }, fetcher });
     const first = await checkFallback(await handler(request()));
     const second = await checkFallback(await handler(request()));
     expect(first).toEqual(second);
@@ -181,6 +205,33 @@ describe("grounded provider provenance and safe failure", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
+  it("grounds the final user instructions in recomputed A/B outcomes and declared control values", async () => {
+    const primary: CoachRequest["primary"] = { schemaVersion: 1, scenarioId: "catalog-slowdown", seed: 42, actions: [{ atMs: 20_000, type: "set-api-replicas", value: 4 }] };
+    const comparison: CoachRequest["primary"] = { ...primary, actions: [{ atMs: 20_000, type: "set-max-attempts", value: 1 }] };
+    const demo: CoachRequest = { mode: "debrief", primary, comparison, untilMs: 120_000 };
+    const actual = buildFacts(demo);
+    const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+      const payload = JSON.parse(init!.body as string);
+      const context = JSON.parse(payload.messages[1].content);
+      expect(context).not.toHaveProperty("hintLevel");
+      expect(context.caseRules).toContain("Pending customers include active operations. Zero API and database queues do not imply zero pending customers.");
+      expect(context.outcomeOverview).toContain(`Primary branch at ${demo.untilMs} ms`);
+      expect(context.outcomeOverview).toContain(`${actual.primary.metrics.succeeded} succeeded, ${actual.primary.metrics.failed} failed, ${actual.primary.metrics.pending} pending`);
+      expect(context.outcomeOverview).toContain(`${actual.comparison!.metrics.succeeded} succeeded, ${actual.comparison!.metrics.failed} failed, ${actual.comparison!.metrics.pending} pending`);
+      expect(context.outcomeOverview).toContain(`succeeded ${actual.delta!.succeeded}, failed ${actual.delta!.failed}`);
+      expect(context.availableControls).toEqual(getScenarios()[0].controls.map(({ type, label, values }) => ({ type, label, values })));
+      expect(Object.keys(context).at(-1)).toBe("responseInstructions");
+      expect(context.responseInstructions).toContain("exactly 2 concise observations");
+      expect(context.responseInstructions).toContain("Never invent an unsupported control value");
+      expect(context.responseInstructions).toContain("No Markdown, backticks, code fences");
+      const evidenceIds = [actual.evidence.find(event => event.id.startsWith("primary:"))!.id, actual.evidence.find(event => event.id.startsWith("comparison:"))!.id];
+      return providerResponse(coachContent(evidenceIds));
+    });
+    const response = await getCoach(demo, actual, { env: configured, fetcher });
+    expect(response.source).toBe("nvidia");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("requests JSON schema only for an explicitly verified supporting model", async () => {
     const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
       const payload = JSON.parse(init!.body as string);
@@ -213,6 +264,7 @@ describe("grounded provider provenance and safe failure", () => {
 
   it.each([
     "{not JSON}",
+    "```json\n" + JSON.stringify(coachContent()) + "\n```",
     "x".repeat(6_001),
     { ...coachContent(), source: "nvidia" },
     { ...coachContent(), summary: "x".repeat(401) },
@@ -231,11 +283,17 @@ describe("grounded provider provenance and safe failure", () => {
     expect(result.observations.flatMap(observation => observation.evidenceEventIds).every(id => facts.allowedIds.has(id))).toBe(true);
   });
 
-  it.each([429, 500, 401])("returns HTTP 200 rules fallback for provider status %s without exposing its body", async status => {
-    const fetcher = vi.fn<typeof fetch>(async () => new Response("private upstream details fixture-key-not-real", { status }));
+  it.each([
+    [429, "Лимит запросов"],
+    [500, "недоступен"],
+    [401, "401"],
+    [403, "403"],
+  ] as const)("returns HTTP 200 rules fallback for provider status %s without exposing its body", async (status, expectedWarning) => {
+    const fetcher = vi.fn<typeof fetch>(async () => new Response("private upstream details fixture-key-not-real Invalid JWT serialization: Missing dot delimiter(s)", { status }));
     const result = await checkFallback(await createCoachHandler({ env: configured, fetcher })(request()));
-    expect(result.warning).toContain(status === 429 ? "Лимит запросов" : "недоступен");
+    expect(result.warning).toContain(expectedWarning);
     expect(JSON.stringify(result)).not.toContain("private upstream details");
+    expect(JSON.stringify(result)).not.toContain("Invalid JWT serialization");
     expect(JSON.stringify(result)).not.toContain("fixture-key-not-real");
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
@@ -286,7 +344,163 @@ describe("grounded provider provenance and safe failure", () => {
   });
 });
 
+describe("self-hosted NVIDIA inference in Brev", () => {
+  const brev: CoachEnv = {
+    INCIDENTLAB_COACH_MODE: "nvidia",
+    NVIDIA_DEPLOYMENT: "brev",
+    NVIDIA_API_KEY: "fixture-gateway-token-not-real",
+    NVIDIA_MODEL: "nvidia/NVIDIA-Nemotron-Nano-9B-v2",
+    NVIDIA_BASE_URL: "https://gateway.example.invalid/v1",
+  };
+  const provenance = "Модель NVIDIA работает на Brev. Это отдельный сервер, а не hosted API NVIDIA.";
+
+  it("sends a bounded non-thinking vLLM JSON-schema request and keeps honest contract-v1 provenance", async () => {
+    const providerLimitations = ["A", "B", "C", "D"].map(label => `${label}: модель упрощает работу сервиса.`);
+    const fetcher = vi.fn<typeof fetch>(async (url, init) => {
+      expect(String(url)).toBe("https://gateway.example.invalid/v1/chat/completions");
+      expect(init!.headers).toMatchObject({ Authorization: "Bearer fixture-gateway-token-not-real" });
+      expect(init!.redirect).toBe("error");
+      const payload = JSON.parse(init!.body as string);
+      expect(payload).toMatchObject({ model: brev.NVIDIA_MODEL, stream: false, max_tokens: 800, temperature: 0 });
+      expect(payload.response_format).toMatchObject({ type: "json_schema", json_schema: { name: "incidentlab_coach", strict: true, schema: { type: "object" } } });
+      expect(payload.messages[0].content).toContain("/no_think");
+      expect(payload).not.toHaveProperty("reasoning_effort");
+      expect(payload).not.toHaveProperty("chat_template_kwargs");
+      expect(init!.body).not.toContain("fixture-gateway-token-not-real");
+      return providerResponse({ ...coachContent(), limitations: providerLimitations });
+    });
+    const response = await createCoachHandler({ env: { ...brev, NVIDIA_API_KEY: ` ${brev.NVIDIA_API_KEY} ` }, fetcher })(request());
+    expect(response.status).toBe(200);
+    const body = await response.json() as CoachResponse;
+    expect(body.source).toBe("nvidia");
+    expect(body.warning).toBeUndefined();
+    expect(body.limitations).toEqual([provenance, ...providerLimitations.slice(0, 3)]);
+    expect(body.observations.flatMap(observation => observation.evidenceEventIds).every(id => facts.allowedIds.has(id))).toBe(true);
+    expect(JSON.stringify(body)).not.toContain("fixture-gateway-token-not-real");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends at most eight real evidence events per branch and validates only the supplied subset", async () => {
+    const primary: CoachRequest["primary"] = { ...input.primary, actions: [{ atMs: 20_000, type: "set-api-replicas", value: 4 }] };
+    const demo: CoachRequest = { mode: "debrief", primary, comparison: { ...primary, actions: [{ atMs: 20_000, type: "set-max-attempts", value: 1 }] }, untilMs: 120_000 };
+    const actual = buildFacts(demo);
+    const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+      const payload = JSON.parse(init!.body as string);
+      const context = JSON.parse(payload.messages[1].content);
+      expect(context).not.toHaveProperty("hintLevel");
+      expect(context.allowedEvidenceEventIds).toEqual(context.evidence.map((event: { id: string }) => event.id));
+      const schema = payload.response_format.json_schema.schema;
+      expect(schema.properties.observations.items.properties.evidenceEventIds.items.enum).toEqual(context.allowedEvidenceEventIds);
+      expect(schema.properties.observations.items.properties.evidenceEventIds).toMatchObject({ minItems: 1, maxItems: 3 });
+      // The decoder receives the complete schema once; prose does not duplicate its long ID enum.
+      expect(payload.messages[0].content).not.toContain("Output schema:");
+      expect(payload.messages[0].content).toContain("never into prose");
+      for (const namespace of ["primary", "comparison"]) {
+        const sent = context.evidence.filter((event: { id: string }) => event.id.startsWith(`${namespace}:`));
+        expect(sent.length).toBeLessThanOrEqual(8);
+        const firstTwo = actual.evidence.filter(event => event.id.startsWith(`${namespace}:`)).slice(0, 2);
+        expect(sent.slice(0, 2)).toEqual(firstTwo);
+        expect(sent.every((event: { id: string }) => actual.allowedIds.has(event.id))).toBe(true);
+      }
+      const omitted = actual.evidence.find(event => !context.allowedEvidenceEventIds.includes(event.id));
+      expect(omitted).toBeDefined();
+      // It exists in the full replay but was not supplied to the model: reject it.
+      return providerResponse(coachContent([omitted!.id, context.allowedEvidenceEventIds[0]]));
+    });
+    const result = await getCoach(demo, actual, { env: brev, fetcher });
+    expect(result.source).toBe("rules");
+    expect(result.warning).toContain("не прошёл проверку");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps hint metadata and withholds full case rules in hint requests", async () => {
+    const hint: CoachRequest = { ...input, mode: "hint", hintLevel: 2 };
+    const actual = buildFacts(hint);
+    const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+      const context = JSON.parse(JSON.parse(init!.body as string).messages[1].content);
+      expect(context.hintLevel).toBe(2);
+      expect(context).not.toHaveProperty("caseRules");
+      return providerResponse(coachContent(actual.evidence.slice(0, 2).map(event => event.id)));
+    });
+    expect((await getCoach(hint, actual, { env: brev, fetcher })).source).toBe("nvidia");
+  });
+
+  it.each([
+    [{ ...brev, NVIDIA_DEPLOYMENT: "other" }, "Неизвестный способ подключения NVIDIA."],
+    [{ ...brev, NVIDIA_MODEL: "Qwen/Qwen3-8B" }, "Для Brev нужна модель NVIDIA Nemotron Nano 9B v2."],
+    [{ ...brev, NVIDIA_MODEL: "nvidia/unverified-model" }, "Для Brev нужна модель NVIDIA Nemotron Nano 9B v2."],
+    [{ ...brev, NVIDIA_BASE_URL: undefined }, "ИИ-помощник не настроен."],
+    [{ ...brev, NVIDIA_BASE_URL: "https://integrate.api.nvidia.com/v1" }, "Не удалось подключить ИИ."],
+    [{ ...brev, NVIDIA_BASE_URL: "http://localhost:8000/v1" }, "Не удалось подключить ИИ."],
+  ] as Array<[CoachEnv, string]>)("fails a misconfigured self-hosted deployment before any provider request %#", async (env, message) => {
+    const fetcher = vi.fn<typeof fetch>();
+    const result = await getCoach(input, facts, { env, fetcher });
+    expect(result.source).toBe("rules");
+    expect(result.warning).toContain(message);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("does not accept valid-looking JSON containing invented references from self-hosted inference", async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => providerResponse(coachContent(["primary:invented", "comparison:invented"])));
+    const result = await getCoach(input, facts, { env: brev, fetcher });
+    expect(result.source).toBe("rules");
+    expect(result.warning).toContain("Brev");
+    expect(result.warning).toContain("не прошёл проверку");
+    expect(result.observations.flatMap(observation => observation.evidenceEventIds).every(id => facts.allowedIds.has(id))).toBe(true);
+  });
+
+  it("labels a gateway authentication failure without leaking its body or falling through to hosted NVIDIA", async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => new Response("fixture-gateway-token-not-real upstream details", { status: 401 }));
+    const result = await getCoach(input, facts, { env: brev, fetcher });
+    expect(result.source).toBe("rules");
+    expect(result.warning).toContain("Brev");
+    expect(result.warning).toContain("HTTP 401");
+    expect(JSON.stringify(result)).not.toContain("fixture-gateway-token-not-real");
+    expect(JSON.stringify(result)).not.toContain("upstream details");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks supported deployment configuration presence without claiming a live GPU", () => {
+    expect(health(brev)).toEqual({ status: "ok", contractVersion: 1, coachConfigured: true });
+    expect(health({ ...brev, NVIDIA_MODEL: "Qwen/Qwen3-8B" }).coachConfigured).toBe(false);
+    expect(health({ ...brev, NVIDIA_BASE_URL: undefined }).coachConfigured).toBe(false);
+    expect(health({ ...brev, NVIDIA_DEPLOYMENT: "unknown" }).coachConfigured).toBe(false);
+  });
+});
+
 describe("honest hints and request limiting", () => {
+  it("keeps reversed seed-42 outcomes, pending customers and each final queue distinct in rules debrief", () => {
+    const scenario = getScenarios()[0];
+    const reversed: CoachRequest = {
+      mode: "debrief",
+      untilMs: scenario.durationMs,
+      primary: {
+        schemaVersion: 1, scenarioId: scenario.id, seed: 42,
+        actions: [{ atMs: scenario.checkpointMs, type: "set-max-attempts", value: 1 }],
+      },
+      comparison: {
+        schemaVersion: 1, scenarioId: scenario.id, seed: 42,
+        actions: [{ atMs: scenario.checkpointMs, type: "set-api-replicas", value: 4 }],
+      },
+    };
+    const actual = buildFacts(reversed);
+    expect(actual.primary.metrics).toMatchObject({ succeeded: 709, failed: 248, pending: 3, dbQueue: 0 });
+    expect(actual.comparison!.metrics).toMatchObject({ succeeded: 120, failed: 800, pending: 40, dbQueue: 1_355 });
+    const response = rulesCoach(reversed, actual, "Демо-режим: разбор по правилам. Запросы к NVIDIA отключены.");
+    expect(response.source).toBe("rules");
+    expect(response.observations[0].text).toContain("успешных — 709, с ошибкой — 248, в ожидании — 3");
+    expect(response.observations[1].text).toContain("успешных ответов — 120, ошибок — 800, в ожидании — 40");
+    expect(response.observations[1].text).toContain(`успешные ответы ${actual.delta!.succeeded}, ошибки ${actual.delta!.failed}, обращения к базе ${actual.delta!.totalAttempts}`);
+    expect(response.observations[2].text).toContain(`В основной попытке повторов — ${actual.primary.metrics.retries}, очередь БД — 0, активных операций — ${actual.primary.metrics.dbActive}`);
+    expect(response.observations[2].text).toContain(`В сравниваемой попытке повторов — ${actual.comparison!.metrics.retries}, очередь БД — 1355, активных операций — ${actual.comparison!.metrics.dbActive}`);
+    expect(response.observations[2].text).toContain("Таймаут не отменяет работу БД");
+    expect(response.observations[2].text).toContain("Пустая очередь не означает, что все запросы уже завершились");
+    const references = response.observations.flatMap(observation => observation.evidenceEventIds);
+    expect(references.length).toBeGreaterThan(0);
+    expect(references.every(id => actual.allowedIds.has(id))).toBe(true);
+    expect(new Set(references.map(id => id.split(":")[0]))).toEqual(new Set(["primary", "comparison"]));
+  });
+
   it("keeps first-level fallback hints focused on investigation without exposing a winning setting or mechanism", () => {
     const hint: CoachRequest = { ...input, mode: "hint", hintLevel: 1 };
     const hintFacts = buildFacts(hint);
