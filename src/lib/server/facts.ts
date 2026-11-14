@@ -1,5 +1,5 @@
 import type { CoachRequest, CoachResponse, RunView, TraceEvent } from "../contracts";
-import { compareRuns, simulateRun } from "../sim";
+import { compareRuns, getScenarios, simulateRun } from "../sim";
 
 export function buildFacts(input: CoachRequest) {
   const compared = input.comparison ? compareRuns(input.primary, input.comparison, input.untilMs) : undefined;
@@ -26,6 +26,10 @@ export function rulesCoach(input: CoachRequest, facts: Facts, warning: string): 
   const { primary, comparison, delta, lowHint, evidence } = facts;
   const forKind = (kind: string, namespace = "primary") => evidence.filter(e => e.id.startsWith(`${namespace}:`) && e.kind === kind).map(e => e.id).slice(0, 2);
   const available = evidence.map(e => e.id).slice(0, 2);
+  const triedAttempts = new Set([primary.controls.maxAttempts, ...(comparison ? [comparison.controls.maxAttempts] : [])]);
+  const attemptValues = getScenarios().find(scenario => scenario.id === input.primary.scenarioId)!
+    .controls.find(control => control.type === "set-max-attempts")!.values;
+  const nextAttempts = attemptValues.find(value => !triedAttempts.has(value));
   const observations: CoachResponse["observations"] = [{
     text: `К отметке ${input.untilMs} мс поступило ${primary.metrics.arrived} запросов: успешных — ${primary.metrics.succeeded}, с ошибкой — ${primary.metrics.failed}, в ожидании — ${primary.metrics.pending}. Ожидающие запросы ещё не завершились.`,
     evidenceEventIds: (forKind("request-failed").length ? forKind("request-failed") : available),
@@ -46,7 +50,7 @@ export function rulesCoach(input: CoachRequest, facts: Facts, warning: string): 
   return {
     source: "rules", summary: input.mode === "hint" ? "Посмотри на результаты запросов и выбери, что проверить дальше." : "Разбор показывает, как настройки API и повторных обращений влияют на очередь в базе и ответы пользователям.",
     observations,
-    nextExperiment: lowHint ? "Останови прогон у первого запроса с ошибкой и изучи его историю. Запиши гипотезу, прежде чем менять настройки." : input.mode === "hint" && input.hintLevel === 2 ? "На контрольной точке измени одну настройку повторов. Сравни обе попытки на одной отметке времени и с тем же начальным числом." : `Вернись к контрольной точке и задай максимум попыток ${primary.controls.maxAttempts === 1 ? 2 : 1}. Оставь то же начальное число и сравни на одной отметке времени успешные ответы, ошибки, ожидающие запросы и обращения к базе.`,
+    nextExperiment: lowHint ? "Останови прогон у первого запроса с ошибкой и изучи его историю. Запиши гипотезу, прежде чем менять настройки." : input.mode === "hint" && input.hintLevel === 2 ? "На контрольной точке измени одну настройку повторов. Сравни обе попытки на одной отметке времени и с тем же начальным числом." : nextAttempts === undefined ? "Все допустимые значения максимума попыток уже проверены. Изучи различия в событиях перед следующим экспериментом." : `Повтори основную попытку, изменив только максимум попыток на ${nextAttempts} с контрольной точки. Остальные решения и время их применения сохрани. Сравни новый прогон с исходной основной попыткой при том же начальном числе и горизонте: успешные ответы, ошибки, ожидание и обращения к базе.`,
     limitations: ["Модель упрощает работу системы. По этим результатам нельзя предсказать поведение реального сервиса.", "Задержки рассчитаны только для успешных ответов. Учитывай также запросы с ошибкой и те, что ещё ждут ответа.", ...(evidence.length ? [] : ["К этой отметке времени событий ещё нет."])], warning,
   };
 }
