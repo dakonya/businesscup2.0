@@ -9,6 +9,7 @@
   box-shadow: 0 5px 22px rgb(23 36 59 / 3%);
   font-size: 14px;
   line-height: 1.55;
+  overflow-wrap: break-word;
 }
 
 .compare-heading-row {
@@ -42,7 +43,7 @@
 .compare-close:focus-visible, .compare-debrief:focus-visible, .compare-table-scroll:focus-visible { outline: 3px solid #9ab6ff; outline-offset: 3px; }
 
 .compare-context { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
-.compare-context > span { display: inline-flex; align-items: center; gap: 6px; min-height: 29px; padding: 4px 9px; border: 1px solid var(--line, #e3e8f0); border-radius: 6px; background: var(--canvas, #f6f8fb); color: var(--muted, #68758b); font-size: 12px; font-weight: 550; }
+.compare-context > span { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 29px; padding: 4px 9px; border: 1px solid var(--line, #e3e8f0); border-radius: 6px; background: var(--canvas, #f6f8fb); color: var(--muted, #68758b); font-size: 12px; font-weight: 550; }
 .compare-context svg { flex: 0 0 auto; }
 
 .compare-outcomes { max-width: 100%; margin: 26px 0 23px; overflow-x: auto; overscroll-behavior-inline: contain; }

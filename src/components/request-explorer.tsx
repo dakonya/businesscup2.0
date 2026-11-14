@@ -2,27 +2,20 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { RequestSummary, RunView } from "../lib/contracts";
+import { dataLabel, dataValue, eventKind, eventMessage, formatCount, formatSeconds } from "../lib/client/locale-ru";
 import { Icon } from "./icons";
 
 type RequestFilter = "all" | RequestSummary["status"];
 const PAGE_SIZE = 8;
 const statusLabels: Record<RequestSummary["status"], string> = {
-  succeeded: "Successful", failed: "Failed", pending: "Pending",
+  succeeded: "Успешно", failed: "Ошибка", pending: "Ожидает",
 };
 const filters: Array<{ value: RequestFilter; label: string }> = [
-  { value: "all", label: "All" },
-  { value: "failed", label: "Failed" },
-  { value: "pending", label: "Pending" },
-  { value: "succeeded", label: "Successful" },
+  { value: "all", label: "Все" },
+  { value: "failed", label: "Ошибки" },
+  { value: "pending", label: "Ожидают" },
+  { value: "succeeded", label: "Успешные" },
 ];
-
-function seconds(ms: number) {
-  return `${(ms / 1000).toFixed(3)}s`;
-}
-
-function humanize(value: string) {
-  return value.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[-_]/g, " ").replace(/^./, first => first.toUpperCase()).replace(/\bdb\b/gi, "DB").replace(/\bapi\b/gi, "API");
-}
 
 export function RequestExplorer({ view, selectedRequestId, onSelect, highlightEventId }: {
   view: RunView;
@@ -61,52 +54,52 @@ export function RequestExplorer({ view, selectedRequestId, onSelect, highlightEv
   const selectedVisible = selected && pageRequests.some(request => request.id === selected.id);
 
   return (
-    <section className="explorer" aria-label="Request explorer">
+    <section className="explorer" aria-label="Исследование запросов">
       <div className="explorer-toolbar">
-        <div className="explorer-filters" role="group" aria-label="Filter requests by outcome">
+        <div className="explorer-filters" role="group" aria-label="Фильтр запросов по результату">
           {filters.map(option => <button key={option.value} type="button" className={`explorer-filter${filter === option.value ? " is-active" : ""}`} aria-pressed={filter === option.value} onClick={() => { setFilter(option.value); setPage(0); }}>
-            {option.label} <span>{counts[option.value].toLocaleString("en-US")}</span>
+            {option.label} <span>{formatCount(counts[option.value])}</span>
           </button>)}
         </div>
         <label className="explorer-search">
-          <span className="explorer-search-label">Search requests</span>
-          <span className="explorer-search-field"><Icon name="search" size={16} /><input type="search" placeholder="Request ID" value={query} onChange={event => { setQuery(event.target.value); setPage(0); }} /></span>
+          <span className="explorer-search-label">Поиск запросов</span>
+          <span className="explorer-search-field"><Icon name="search" size={16} /><input type="search" placeholder="ID запроса" value={query} onChange={event => { setQuery(event.target.value); setPage(0); }} /></span>
         </label>
       </div>
 
       <div className="explorer-table-scroll">
         <table className="explorer-table">
-          <caption className="explorer-caption">Unique user requests. Open a request to inspect its complete evidence trail.</caption>
-          <thead><tr><th scope="col">Request</th><th scope="col">Arrived</th><th scope="col">Outcome</th><th scope="col">Attempts</th><th scope="col">Response time</th></tr></thead>
+          <caption className="explorer-caption">Уникальные пользовательские запросы. Откройте запрос, чтобы изучить полную историю событий.</caption>
+          <thead><tr><th scope="col">Запрос</th><th scope="col">Поступил</th><th scope="col">Результат</th><th scope="col">Попытки</th><th scope="col">Время ответа</th></tr></thead>
           <tbody>
             {pageRequests.map(request => {
               const expanded = request.id === selectedRequestId;
               return <tr key={request.id} className={expanded ? "explorer-row is-selected" : "explorer-row"}>
-                <th scope="row"><button type="button" className="explorer-request-button" aria-expanded={expanded} aria-controls={expanded ? `request-trace-${request.id}` : undefined} onClick={() => onSelect(expanded ? null : request.id)}><Icon name={expanded ? "chevron" : "right"} size={15} /><code>{request.id}</code><span className="explorer-open-label">{expanded ? "Close trace" : "Inspect"}</span></button></th>
-                <td><time>{seconds(request.arrivedAtMs)}</time></td>
+                <th scope="row"><button type="button" className="explorer-request-button" aria-expanded={expanded} aria-controls={expanded ? `request-trace-${request.id}` : undefined} onClick={() => onSelect(expanded ? null : request.id)}><Icon name={expanded ? "chevron" : "right"} size={15} /><code>{request.id}</code><span className="explorer-open-label">{expanded ? "Скрыть" : "Подробнее"}</span></button></th>
+                <td><time>{formatSeconds(request.arrivedAtMs)}</time></td>
                 <td><span className={`explorer-status explorer-status-${request.status}`}>{statusLabels[request.status]}</span></td>
-                <td>{request.attempts.toLocaleString("en-US")}</td>
-                <td>{request.latencyMs === null ? <span className="explorer-muted">{request.status === "pending" ? "Waiting" : "No response"}</span> : `${request.latencyMs.toLocaleString("en-US")} ms`}</td>
+                <td>{formatCount(request.attempts)}</td>
+                <td>{request.latencyMs === null ? <span className="explorer-muted">{request.status === "pending" ? "Ожидание" : "Нет ответа"}</span> : `${formatCount(request.latencyMs)} мс`}</td>
               </tr>;
             })}
-            {pageRequests.length === 0 && <tr><td colSpan={5}><div className="explorer-empty"><Icon name="search" size={22} /><p>{view.requests.length === 0 ? "No requests have arrived yet. Advance model time to inspect one." : "No requests match this filter. Try another outcome or request ID."}</p></div></td></tr>}
+            {pageRequests.length === 0 && <tr><td colSpan={5}><div className="explorer-empty"><Icon name="search" size={22} /><p>{view.requests.length === 0 ? "Запросы ещё не поступили. Продвиньте модельное время, чтобы изучить их." : "Нет запросов с такими условиями. Выберите другой результат или ID запроса."}</p></div></td></tr>}
           </tbody>
         </table>
       </div>
 
       <div className="explorer-pagination">
-        <span>{filteredRequests.length ? `${currentPage * PAGE_SIZE + 1}–${Math.min((currentPage + 1) * PAGE_SIZE, filteredRequests.length)} of ${filteredRequests.length.toLocaleString("en-US")}` : "0 requests"}</span>
-        <div><button type="button" className="explorer-page-button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)} aria-label="Previous page of requests">Previous</button><span>Page {currentPage + 1} of {pageCount}</span><button type="button" className="explorer-page-button" disabled={currentPage + 1 >= pageCount} onClick={() => setPage(currentPage + 1)} aria-label="Next page of requests">Next</button></div>
+        <span>{filteredRequests.length ? `${formatCount(currentPage * PAGE_SIZE + 1)}–${formatCount(Math.min((currentPage + 1) * PAGE_SIZE, filteredRequests.length))} из ${formatCount(filteredRequests.length)}` : "0 запросов"}</span>
+        <div><button type="button" className="explorer-page-button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)} aria-label="Предыдущая страница запросов">Назад</button><span>Страница {formatCount(currentPage + 1)} из {formatCount(pageCount)}</span><button type="button" className="explorer-page-button" disabled={currentPage + 1 >= pageCount} onClick={() => setPage(currentPage + 1)} aria-label="Следующая страница запросов">Далее</button></div>
       </div>
 
-      {selectedRequestId && <section id={`request-trace-${selectedRequestId}`} className="trace-panel" aria-label={`Evidence trail for request ${selectedRequestId}`}>
-        <div className="trace-heading"><div><span className="trace-eyebrow">REQUEST EVIDENCE</span><h3><code>{selectedRequestId}</code>{selected && <span className={`explorer-status explorer-status-${selected.status}`}>{statusLabels[selected.status]}</span>}</h3></div><button type="button" className="trace-close" onClick={() => onSelect(null)} aria-label="Close request evidence"><Icon name="close" size={18} /></button></div>
-        {selected && <p className="trace-summary">{selected.attempts} database {selected.attempts === 1 ? "attempt" : "attempts"} · Arrived at {seconds(selected.arrivedAtMs)} · {selectedTrace.length} evidence events through {seconds(view.atMs)}{!selectedVisible ? ". Selected request is outside the current table page or filter." : "."}</p>}
-        <p className="trace-explainer">A retry adds another attempt. A timeout means the API stopped waiting; database work may still finish later.</p>
+      {selectedRequestId && <section id={`request-trace-${selectedRequestId}`} className="trace-panel" aria-label={`История событий запроса ${selectedRequestId}`}>
+        <div className="trace-heading"><div><span className="trace-eyebrow">СОБЫТИЯ ЗАПРОСА</span><h3><code>{selectedRequestId}</code>{selected && <span className={`explorer-status explorer-status-${selected.status}`}>{statusLabels[selected.status]}</span>}</h3></div><button type="button" className="trace-close" onClick={() => onSelect(null)} aria-label="Закрыть историю запроса"><Icon name="close" size={18} /></button></div>
+        {selected && <p className="trace-summary">Попыток обращения к БД: {formatCount(selected.attempts)} · Поступление: {formatSeconds(selected.arrivedAtMs)} · Событий до {formatSeconds(view.atMs)}: {formatCount(selectedTrace.length)}{!selectedVisible ? ". Выбранный запрос находится вне текущей страницы или фильтра." : "."}</p>}
+        <p className="trace-explainer">Повтор добавляет ещё одну попытку. Таймаут означает, что API прекратил ждать; работа в базе данных может завершиться позже.</p>
         {selectedTrace.length ? <ol className="trace-events">{selectedTrace.map(event => <li key={event.id} id={`evidence-${event.id}`} className={`trace-event trace-event-${event.kind}${highlightEventId === event.id ? " is-highlighted" : ""}`}>
           <div className="trace-event-marker" aria-hidden="true" />
-          <div className="trace-event-content"><div className="trace-event-meta"><time>{seconds(event.atMs)}</time><span className="trace-event-kind">{humanize(event.kind)}</span>{event.attemptId && <code className="trace-attempt">{event.attemptId}</code>}</div><p>{event.message}</p>{event.data && Object.keys(event.data).length > 0 && <dl className="trace-event-data">{Object.entries(event.data).map(([key, value]) => <div key={key}><dt>{humanize(key)}</dt><dd>{String(value)}</dd></div>)}</dl>}</div>
-        </li>)}</ol> : <div className="trace-empty"><p>{selected ? "No evidence events exist for this request at the current model time." : "This request is not present at the current model time. Advance time or select another request."}</p></div>}
+          <div className="trace-event-content"><div className="trace-event-meta"><time>{formatSeconds(event.atMs)}</time><span className="trace-event-kind">{eventKind(event.kind)}</span>{event.attemptId && <code className="trace-attempt">{event.attemptId}</code>}</div><p>{eventMessage(event)}</p>{event.data && Object.keys(event.data).length > 0 && <dl className="trace-event-data">{Object.entries(event.data).map(([key, value]) => <div key={key}><dt>{dataLabel(key)}</dt><dd>{dataValue(key, value)}</dd></div>)}</dl>}</div>
+        </li>)}</ol> : <div className="trace-empty"><p>{selected ? "Для этого запроса пока нет событий в текущий момент модельного времени." : "В текущий момент модельного времени этого запроса ещё нет. Продвиньте время или выберите другой запрос."}</p></div>}
       </section>}
     </section>
   );

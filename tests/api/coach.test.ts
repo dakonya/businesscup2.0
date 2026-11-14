@@ -16,13 +16,13 @@ const facts = buildFacts(input);
 const ids = [...facts.allowedIds];
 function coachContent(evidenceIds = ids.slice(0, 2)) {
   return {
-    summary: "The replay contains customer failures and pending requests.",
+    summary: "В прогоне есть неуспешные и ожидающие ответа запросы.",
     observations: [
-      { text: "Inspect the earlier event.", evidenceEventIds: [evidenceIds[0]] },
-      { text: "Compare the later event.", evidenceEventIds: [evidenceIds[1]] },
+      { text: "Изучите более раннее событие.", evidenceEventIds: [evidenceIds[0]] },
+      { text: "Сравните его с более поздним событием.", evidenceEventIds: [evidenceIds[1]] },
     ],
-    nextExperiment: "Compare one retry setting with the same seed and horizon.",
-    limitations: ["This simulation simplifies production systems."],
+    nextExperiment: "Сравните одну настройку повторов при одинаковом начальном числе и времени.",
+    limitations: ["Эта модель упрощает рабочие системы."],
   };
 }
 function providerResponse(content: unknown = coachContent()) {
@@ -124,7 +124,8 @@ describe("coach input, byte limits, and configuration", () => {
     const first = await checkFallback(await handler(request()));
     const second = await checkFallback(await handler(request()));
     expect(first).toEqual(second);
-    expect(first.warning).toBe(`Missing configuration: ${missing.join(", ")}.`);
+    expect(missing.length).toBeGreaterThan(0);
+    expect(first.warning).toBe("ИИ-помощник пока не настроен. Показан разбор по правилам на основе результатов прогона.");
     expect(JSON.stringify(first)).not.toContain("fixture-key-not-real");
     expect(fetcher).not.toHaveBeenCalled();
   });
@@ -143,7 +144,7 @@ describe("coach input, byte limits, and configuration", () => {
     const response = await createCoachHandler({ env: configured, fetcher })(request({ ...input, untilMs: 0 }));
     const fallback = await checkFallback(response);
     expect(fallback.observations.every(observation => observation.evidenceEventIds.length === 0)).toBe(true);
-    expect(fallback.limitations.some(text => text.includes("No trace events"))).toBe(true);
+    expect(fallback.limitations.some(text => text.includes("ещё нет событий"))).toBe(true);
     expect(fetcher).not.toHaveBeenCalled();
   });
 });
@@ -163,6 +164,7 @@ describe("grounded provider provenance and safe failure", () => {
       const payload = JSON.parse(init!.body as string);
       posted = JSON.parse(payload.messages[1].content);
       expect(payload.reasoning_effort).toBe("low");
+      expect(payload.messages[0].content).toContain("must be concise Russian");
       const primaryId = actual.evidence.find(event => event.id.startsWith("primary:"))!.id;
       const comparisonId = actual.evidence.find(event => event.id.startsWith("comparison:"))!.id;
       return providerResponse(coachContent([primaryId, comparisonId]));
@@ -190,6 +192,25 @@ describe("grounded provider provenance and safe failure", () => {
     expect(result.source).toBe("nvidia");
   });
 
+  it("uses Russian rules when a valid grounded provider response ignores the requested language", async () => {
+    const english = {
+      summary: "The replay contains failed and pending customer requests.",
+      observations: [
+        { text: "Inspect the earlier event.", evidenceEventIds: [ids[0]] },
+        { text: "Compare the later event.", evidenceEventIds: [ids[1]] },
+      ],
+      nextExperiment: "Change one retry control with the same seed and horizon.",
+      limitations: ["This is a simplified simulation."],
+    };
+    const fetcher = vi.fn<typeof fetch>(async () => providerResponse(english));
+    const result = await getCoach(input, facts, { env: configured, fetcher });
+    expect(result.source).toBe("rules");
+    expect(result.warning).toContain("не прошёл проверку");
+    expect(result.summary).toMatch(/[А-Яа-яЁё]/);
+    expect(result.observations.flatMap(observation => observation.evidenceEventIds).every(id => facts.allowedIds.has(id))).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     "{not JSON}",
     "x".repeat(6_001),
@@ -205,7 +226,7 @@ describe("grounded provider provenance and safe failure", () => {
     const fetcher = vi.fn<typeof fetch>(async () => providerResponse(content));
     const result = await getCoach(input, facts, { env: configured, fetcher });
     expect(result.source).toBe("rules");
-    expect(result.warning).toContain("invalid response");
+    expect(result.warning).toContain("не прошёл проверку");
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(result.observations.flatMap(observation => observation.evidenceEventIds).every(id => facts.allowedIds.has(id))).toBe(true);
   });
@@ -213,7 +234,7 @@ describe("grounded provider provenance and safe failure", () => {
   it.each([429, 500, 401])("returns HTTP 200 rules fallback for provider status %s without exposing its body", async status => {
     const fetcher = vi.fn<typeof fetch>(async () => new Response("private upstream details fixture-key-not-real", { status }));
     const result = await checkFallback(await createCoachHandler({ env: configured, fetcher })(request()));
-    expect(result.warning).toContain(status === 429 ? "rate limit" : "unavailable");
+    expect(result.warning).toContain(status === 429 ? "лимит запросов" : "недоступен");
     expect(JSON.stringify(result)).not.toContain("private upstream details");
     expect(JSON.stringify(result)).not.toContain("fixture-key-not-real");
     expect(fetcher).toHaveBeenCalledTimes(1);
@@ -223,7 +244,7 @@ describe("grounded provider provenance and safe failure", () => {
     const fetcher = vi.fn<typeof fetch>(async () => { throw new Error("fixture-key-not-real secret transport detail"); });
     const result = await getCoach(input, facts, { env: configured, fetcher });
     expect(result.source).toBe("rules");
-    expect(result.warning).toContain("unavailable");
+    expect(result.warning).toContain("недоступен");
     expect(JSON.stringify(result)).not.toContain("fixture-key-not-real");
   });
 
@@ -235,10 +256,10 @@ describe("grounded provider provenance and safe failure", () => {
     });
     const handler = createCoachHandler({ env: configured, fetcher, timeoutMs: 5, limiter: createLimiter({ concurrent: 1, perClient: 10 }) });
     const result = await checkFallback(await handler(request()));
-    expect(result.warning).toContain("timed out");
+    expect(result.warning).toContain("не ответил вовремя");
     expect(signal!.aborted).toBe(true);
     const second = await checkFallback(await handler(request()));
-    expect(second.warning).toContain("timed out");
+    expect(second.warning).toContain("не ответил вовремя");
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
@@ -246,7 +267,7 @@ describe("grounded provider provenance and safe failure", () => {
     const fetcher = vi.fn<typeof fetch>(async () => new Response(new ReadableStream<Uint8Array>({ start() {} })));
     const result = await getCoach(input, facts, { env: configured, fetcher, timeoutMs: 5 });
     expect(result.source).toBe("rules");
-    expect(result.warning).toContain("timed out");
+    expect(result.warning).toContain("не ответил вовремя");
   });
 
   it("bounds provider bytes before parsing the completion envelope", async () => {
@@ -260,7 +281,7 @@ describe("grounded provider provenance and safe failure", () => {
     const fetcher = vi.fn<typeof fetch>();
     const result = await getCoach(input, facts, { env: { ...configured, NVIDIA_BASE_URL: base }, fetcher });
     expect(result.source).toBe("rules");
-    expect(result.warning).toBe("NVIDIA_BASE_URL is invalid.");
+    expect(result.warning).toBe("Не удалось подключить ИИ-помощника. Показан разбор по правилам.");
     expect(fetcher).not.toHaveBeenCalled();
   });
 });
@@ -270,13 +291,13 @@ describe("honest hints and request limiting", () => {
     const hint: CoachRequest = { ...input, mode: "hint", hintLevel: 1 };
     const hintFacts = buildFacts(hint);
     const response = rulesCoach(hint, hintFacts, "Fixture fallback.");
-    expect(JSON.stringify(response)).not.toMatch(/maximum attempts set to 1|timed-out database work continues|slowdownFactor|root cause|aggressive retries/i);
-    expect(response.nextExperiment).toContain("inspect");
+    expect(JSON.stringify(response)).not.toMatch(/максимум попыток 1|После тайм-аута работа в базе продолжается|slowdownFactor|первопричин|агрессивные повторы/i);
+    expect(response.nextExperiment).toContain("изучите");
     expect(hintFacts.evidence.every(event => ["arrival", "request-succeeded", "request-failed", "intervention"].includes(event.kind))).toBe(true);
     const level2: CoachRequest = { ...hint, hintLevel: 2 };
-    expect(rulesCoach(level2, buildFacts(level2), "Fixture fallback.").nextExperiment).not.toContain("set to 1");
+    expect(rulesCoach(level2, buildFacts(level2), "Fixture fallback.").nextExperiment).not.toContain("максимум попыток 1");
     const level3: CoachRequest = { ...hint, hintLevel: 3 };
-    expect(rulesCoach(level3, buildFacts(level3), "Fixture fallback.").nextExperiment).toContain("maximum attempts set to 1");
+    expect(rulesCoach(level3, buildFacts(level3), "Fixture fallback.").nextExperiment).toContain("максимум попыток 1");
   });
 
   it("returns a genuine HTTP 429 for exhausted per-client budget, without charging invalid input", async () => {

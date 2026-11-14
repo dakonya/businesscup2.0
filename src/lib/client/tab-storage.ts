@@ -9,7 +9,7 @@ type StorageEnvironment = {
 
 export const TAB_POINTER_KEY = "incidentlab.tab.snapshot.v1";
 const SNAPSHOT_PREFIX = `${STORAGE_KEY}.tab.`;
-const STORAGE_WARNING = "Practice can continue in this tab, but this browser could not enable saving across reloads.";
+const STORAGE_WARNING = "Можно продолжать тренировку в этой вкладке, но браузеру не удалось включить сохранение после перезагрузки.";
 
 /**
  * Call once after hydration. Every mount rotates the key, including duplicated tabs
@@ -36,10 +36,10 @@ export function openTabStorage(environment?: StorageEnvironment): {
       memory = browser.localStorage.getItem(previousKey);
     }
     const id = (browser.createId ?? (() => globalThis.crypto.randomUUID()))();
-    if (!/^[a-zA-Z0-9_-]{1,100}$/.test(id)) throw new Error("Invalid snapshot ID");
+    if (!/^[a-zA-Z0-9_-]{1,100}$/.test(id)) throw new Error("Некорректный идентификатор сохранения");
     const nextKey = `${SNAPSHOT_PREFIX}${id}`;
-    if (nextKey === previousKey) throw new Error("Snapshot ID must rotate");
-    if (browser.localStorage.getItem(nextKey) !== null) throw new Error("Snapshot ID is already in use");
+    if (nextKey === previousKey) throw new Error("Нужен новый идентификатор сохранения");
+    if (browser.localStorage.getItem(nextKey) !== null) throw new Error("Идентификатор сохранения уже используется");
     // Confirm localStorage works before publishing the sessionStorage pointer.
     browser.localStorage.setItem(nextKey, memory ?? "");
     browser.sessionStorage.setItem(TAB_POINTER_KEY, nextKey);

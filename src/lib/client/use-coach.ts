@@ -77,19 +77,19 @@ export function useCoach(request: CoachRequest | null, contextKey = "") {
         signal: controller.signal,
       });
       if (!result.ok) {
-        if (result.status === 429) throw new CoachError("The coach is busy. Wait a moment and try again.");
-        throw new CoachError("The coach could not respond. Your practice and comparison are still available.");
+        if (result.status === 429) throw new CoachError("Помощник занят. Немного подождите и повторите попытку.");
+        throw new CoachError("Помощник не смог ответить. Тренировка и сравнение по-прежнему доступны.");
       }
       const payload: unknown = await result.json();
-      if (!isResponse(payload)) throw new CoachError("The coach returned an unreadable recap. Please try again.");
+      if (!isResponse(payload)) throw new CoachError("Не удалось прочитать разбор помощника. Повторите попытку.");
       if (isCurrent()) setResponse(payload);
     } catch (cause) {
       if (!isCurrent()) return;
-      if (timedOut) setError("The coach took too long. Please try again. You can continue practicing.");
+      if (timedOut) setError("Помощник не ответил вовремя. Повторите попытку. Вы можете продолжать тренировку.");
       else if (!controller.signal.aborted) {
         setError(cause instanceof CoachError
           ? cause.message
-          : "The coach is unavailable. Please try again. Your practice is still available.");
+          : "Помощник недоступен. Повторите попытку. Тренировка по-прежнему работает.");
       }
     } finally {
       clearTimeout(timeout);

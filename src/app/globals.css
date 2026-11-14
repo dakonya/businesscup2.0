@@ -1574,3 +1574,19 @@
   .workspace-jump-links a { padding: 3px 8px; font-size: 12px; text-decoration: none; }
   #observations, #request-evidence, #decision-controls, #coach-panel { scroll-margin-top: 66px; }
 }
+/* Longer Russian labels must fit the playback timeline and narrow screens. */
+.timeline-labels { min-height: 24px; }
+.checkpoint-label { top: 5px; line-height: 15px; }
+.metric-label { white-space: normal; align-items: flex-start; }
+.metric-label i { flex-shrink: 0; margin-top: 6px; }
+.hint-label { flex-wrap: wrap; }
+@media (max-width: 600px) {
+  .checkpoint-label { top: 22px; }
+  .playback-state { font-size: 8px; }
+  .playback-main { gap: 8px; }
+  .workspace-jump-links { gap: 2px; padding-inline: 6px; }
+  .workspace-jump-links a { padding-inline: 6px; font-size: 11px; }
+  .workspace-heading { align-items: flex-start; }
+  .workspace-heading h1 { overflow-wrap: anywhere; }
+  .heading-actions { flex-shrink: 0; }
+}

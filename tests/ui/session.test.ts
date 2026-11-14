@@ -18,7 +18,7 @@ function session(): SavedSession {
   return {
     schemaVersion: 1,
     activeAttemptId: "a",
-    attempts: [createAttempt(scenario, 42, "a", "Attempt A")],
+    attempts: [createAttempt(scenario, 42, "a", "Попытка A")],
   };
 }
 
@@ -56,8 +56,8 @@ test("editing history requires an explicit fork", () => {
   const source = createAttempt(scenario, 42, "a");
   source.cursorMs = 10_000;
   source.spec.actions = [{ atMs: 20_000, type: "set-api-replicas", value: 4 }];
-  assert.throws(() => appendIntervention(source, { atMs: 10_000, type: "set-api-replicas", value: 1 }), /new attempt/);
-  assert.throws(() => forkAttempt(source, 20_000, "b", "Attempt B"), /checkpoint/);
+  assert.throws(() => appendIntervention(source, { atMs: 10_000, type: "set-api-replicas", value: 1 }), /новую попытку/);
+  assert.throws(() => forkAttempt(source, 20_000, "b", "Attempt B"), /контрольной точки/);
 });
 
 test("saved state restores valid future actions but rejects invalid versions, ranges and ordering", () => {
@@ -86,10 +86,23 @@ test("sessions with different workloads cannot be restored for comparison", () =
 
 test("corrupt and blocked localStorage do not crash practice", () => {
   assert.equal(readSession({ getItem: () => "{bad" }, [scenario]).session, null);
-  assert.match(readSession({ getItem: () => "{bad" }, [scenario]).error ?? "", /could not be read/);
+  assert.match(readSession({ getItem: () => "{bad" }, [scenario]).error ?? "", /Не удалось прочитать/);
   assert.equal(readSession({ getItem: () => null }, [scenario]).error, null);
-  assert.match(readSession({ getItem: () => { throw new Error("blocked"); } }, [scenario]).error ?? "", /unavailable/);
-  assert.match(writeSession({ setItem: () => { throw new Error("quota"); } }, session()) ?? "", /could not save/);
+  assert.match(readSession({ getItem: () => { throw new Error("blocked"); } }, [scenario]).error ?? "", /недоступна/);
+  assert.match(writeSession({ setItem: () => { throw new Error("quota"); } }, session()) ?? "", /не удалось сохранить/);
+});
+
+test("legacy default labels migrate to Russian without changing custom labels or run specifications", () => {
+  const legacy = session();
+  legacy.attempts[0].label = "Attempt A";
+  legacy.attempts.push(createAttempt(scenario, 42, "custom", "Attempt Z — my hypothesis"));
+  const restored = validateSession(legacy, [scenario]);
+  assert.ok(restored);
+  assert.equal(restored.attempts[0].label, "Попытка A");
+  assert.equal(restored.attempts[1].label, "Attempt Z — my hypothesis");
+  assert.deepEqual(restored.attempts[0].spec, legacy.attempts[0].spec);
+  assert.equal(legacy.attempts[0].label, "Attempt A");
+  assert.equal(createAttempt(scenario, 42, "default").label, "Попытка A");
 });
 
 test("control state is replayed only to the active model time", () => {

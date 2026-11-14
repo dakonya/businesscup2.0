@@ -24,7 +24,7 @@
 .viz-node-queue .viz-node-icon { color: var(--amber, #b7780d); background: #fff7e8; }
 .viz-node-database .viz-node-icon { color: #6d5ad3; background: #f1efff; }
 .viz-node-copy { display: flex; flex-direction: column; justify-content: center; gap: 4px; min-width: 0; }
-.viz-node-copy strong { font-size: 12px; font-weight: 650; line-height: 1.3; }
+.viz-node-copy strong { font-size: 12px; font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; }
 .viz-node-copy > span { color: var(--muted, #68758b); font-size: 10px; line-height: 1.4; }
 .viz-node-stat { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; grid-column: 1 / -1; padding-top: 8px; border-top: 1px solid #edf0f5; }
 .viz-node-stat b { font-size: 23px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.04em; line-height: 1.1; }
@@ -125,8 +125,8 @@
 @media (max-width: 600px) {
   .explorer { --explorer-gutter: 16px; }
   .explorer-toolbar { gap: 12px; }
-  .explorer-filters { width: 100%; gap: 2px; padding: 3px; }
-  .explorer-filter { justify-content: center; flex: 1 1 auto; gap: 4px; min-height: 32px; padding: 6px; font-size: 10px; }
+  .explorer-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: 4px; padding: 3px; }
+  .explorer-filter { justify-content: space-between; gap: 4px; min-height: 32px; padding: 6px 9px; font-size: 11px; }
   .explorer-filter > span { min-width: 0; font-size: 9px; }
   .explorer-search { width: 100%; max-width: none; }
   .explorer-table { min-width: 540px; }

@@ -78,7 +78,7 @@ export function validateSession(
     ids.add(candidate.id);
     attempts.push({
       id: candidate.id,
-      label: candidate.label.trim(),
+      label: candidate.label.trim().replace(/^Attempt ([A-Z])$/, "Попытка $1"),
       cursorMs: candidate.cursorMs,
       spec: { schemaVersion: 1, scenarioId: scenario.id, seed: candidate.spec.seed, actions },
     });
@@ -96,10 +96,10 @@ export function createAttempt(
   scenario: ScenarioDefinition,
   seed: number,
   id: string = globalThis.crypto.randomUUID(),
-  label = "Attempt A",
+  label = "Попытка A",
 ): SavedAttempt {
   if (!isId(id) || !isLabel(label)) {
-    throw new Error("The practice seed, attempt ID or label is invalid.");
+    throw new Error("Некорректные параметры тренировки, идентификатор или название попытки.");
   }
   const attempt: SavedAttempt = {
     id,
@@ -119,16 +119,16 @@ export function readSession(
   try {
     raw = storage.getItem(STORAGE_KEY);
   } catch {
-    return { session: null, error: "Saved practice is unavailable in this browser. You can still start a new session." };
+    return { session: null, error: "Сохранённая тренировка недоступна в этом браузере. Вы можете начать новую сессию." };
   }
   if (raw === null) return { session: null, error: null };
   try {
     const session = validateSession(JSON.parse(raw), scenarios);
     return session
       ? { session, error: null }
-      : { session: null, error: "This saved practice is invalid or uses an older format. Start a new session." };
+      : { session: null, error: "Сохранённая тренировка повреждена или использует устаревший формат. Начните новую сессию." };
   } catch {
-    return { session: null, error: "Saved practice could not be read. Start a new session." };
+    return { session: null, error: "Не удалось прочитать сохранённую тренировку. Начните новую сессию." };
   }
 }
 
@@ -140,7 +140,7 @@ export function writeSession(
     storage.setItem(STORAGE_KEY, JSON.stringify(session));
     return null;
   } catch {
-    return "Your browser could not save this practice. Keep this tab open to continue.";
+    return "Браузеру не удалось сохранить тренировку. Продолжайте в этой вкладке и не закрывайте её.";
   }
 }
 
@@ -154,7 +154,7 @@ export function forkAttempt(
   if (
     !isInteger(checkpointMs) || checkpointMs < 0 || checkpointMs > source.cursorMs ||
     !isId(id) || id === source.id || !isLabel(label)
-  ) throw new Error("Play to the checkpoint before creating a new attempt.");
+  ) throw new Error("Дойдите до контрольной точки, прежде чем создавать новую попытку.");
   const next = cloneAttempt(source);
   next.id = id;
   next.label = label.trim();
@@ -172,8 +172,8 @@ export function appendIntervention(
   if (
     !isInteger(action.atMs) || !isInteger(action.value) || action.atMs < 0 ||
     action.atMs !== attempt.cursorMs || (lastAction && action.atMs < lastAction.atMs)
-  ) throw new Error("Create a new attempt before changing an earlier decision.");
-  if (!CONTROL_KEYS[action.type]) throw new Error("This intervention is not supported.");
+  ) throw new Error("Создайте новую попытку, прежде чем изменять прошлое решение.");
+  if (!CONTROL_KEYS[action.type]) throw new Error("Такое вмешательство не поддерживается.");
   const lastOfType = [...attempt.spec.actions].reverse().find((item) => item.type === action.type);
   // Also makes repeated clicks idempotent after playback has resumed.
   if (lastOfType?.value === action.value) return attempt;
