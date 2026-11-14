@@ -42,7 +42,7 @@ def main() -> int:
         print("Use HTTPS for external requests.")
         return 2
     schema = {"type": "object", "properties": {"ok": {"type": "boolean", "enum": [True]}}, "required": ["ok"], "additionalProperties": False}
-    payload = {"model": MODEL, "messages": [{"role": "system", "content": "/no_think\nReturn JSON matching the schema."}, {"role": "user", "content": "Return an object whose ok field is true."}], "stream": False, "temperature": 0, "max_tokens": 256, "response_format": {"type": "json_schema", "json_schema": {"name": "probe", "strict": True, "schema": schema}}}
+    payload = {"model": MODEL, "messages": [{"role": "system", "content": "/no_think\nReturn exactly one bare JSON object matching the schema. Do not use Markdown, backticks, code fences, explanations, or text outside the object."}, {"role": "user", "content": "Reply with exactly this bare JSON object, without Markdown or code fences: {\"ok\":true}"}], "stream": False, "temperature": 0, "max_tokens": 256, "response_format": {"type": "json_schema", "json_schema": {"name": "probe", "strict": True, "schema": schema}}}
     request = urllib.request.Request(url + "/v1/chat/completions", json.dumps(payload).encode(), {"Content-Type": "application/json", "Authorization": "Bearer " + token})
     try:
         with urllib.request.build_opener(NoRedirect()).open(request, timeout=25) as response:

@@ -22,7 +22,7 @@ if (missing.length) {
       body: JSON.stringify({ model, stream: false, max_tokens: 256, temperature: 0, ...schema,
         ...(!isBrev && model === "nvidia/nemotron-3.5-super-vl-120b-a12b" ? { reasoning_effort: "none" } : {}),
         ...(model.startsWith("openai/gpt-oss-") ? { reasoning_effort: "low" } : {}),
-        messages: [...(isBrev ? [{ role: "system", content: "/no_think\nReturn the requested JSON only." }] : []), { role: "user", content: 'Reply with only this JSON object: {"ok":true}' }] }),
+        messages: [...(isBrev ? [{ role: "system", content: "/no_think\nReturn exactly one bare JSON object. Do not use Markdown, backticks, code fences, explanations, or text outside the object." }] : []), { role: "user", content: 'Reply with exactly this bare JSON object, without Markdown or code fences: {"ok":true}' }] }),
     });
     if (!response.ok) {
       console.error(`NVIDIA inference failed: HTTP ${response.status}`); process.exitCode = 1;

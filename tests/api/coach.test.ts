@@ -3,6 +3,7 @@ import type { CoachRequest, CoachResponse } from "../../src/lib/contracts";
 import { createCoachHandler, MAX_BODY_BYTES } from "../../src/lib/server/coach-handler";
 import { buildFacts, rulesCoach } from "../../src/lib/server/facts";
 import { createLimiter } from "../../src/lib/server/limits";
+import { getScenarios } from "../../src/lib/sim";
 import { getCoach, health, type CoachEnv } from "../../src/lib/server/provider";
 import { GET as healthRoute } from "../../src/app/api/health/route";
 import { POST as coachRoute } from "../../src/app/api/coach/route";
@@ -179,6 +180,33 @@ describe("grounded provider provenance and safe failure", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
+  it("grounds the final user instructions in recomputed A/B outcomes and declared control values", async () => {
+    const primary: CoachRequest["primary"] = { schemaVersion: 1, scenarioId: "catalog-slowdown", seed: 42, actions: [{ atMs: 20_000, type: "set-api-replicas", value: 4 }] };
+    const comparison: CoachRequest["primary"] = { ...primary, actions: [{ atMs: 20_000, type: "set-max-attempts", value: 1 }] };
+    const demo: CoachRequest = { mode: "debrief", primary, comparison, untilMs: 120_000 };
+    const actual = buildFacts(demo);
+    const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+      const payload = JSON.parse(init!.body as string);
+      const context = JSON.parse(payload.messages[1].content);
+      expect(context).not.toHaveProperty("hintLevel");
+      expect(context.caseRules).toContain("Pending customers include active operations. Zero API and database queues do not imply zero pending customers.");
+      expect(context.outcomeOverview).toContain(`Primary branch at ${demo.untilMs} ms`);
+      expect(context.outcomeOverview).toContain(`${actual.primary.metrics.succeeded} succeeded, ${actual.primary.metrics.failed} failed, ${actual.primary.metrics.pending} pending`);
+      expect(context.outcomeOverview).toContain(`${actual.comparison!.metrics.succeeded} succeeded, ${actual.comparison!.metrics.failed} failed, ${actual.comparison!.metrics.pending} pending`);
+      expect(context.outcomeOverview).toContain(`succeeded ${actual.delta!.succeeded}, failed ${actual.delta!.failed}`);
+      expect(context.availableControls).toEqual(getScenarios()[0].controls.map(({ type, label, values }) => ({ type, label, values })));
+      expect(Object.keys(context).at(-1)).toBe("responseInstructions");
+      expect(context.responseInstructions).toContain("exactly 2 concise observations");
+      expect(context.responseInstructions).toContain("Never invent an unsupported control value");
+      expect(context.responseInstructions).toContain("No Markdown, backticks, code fences");
+      const evidenceIds = [actual.evidence.find(event => event.id.startsWith("primary:"))!.id, actual.evidence.find(event => event.id.startsWith("comparison:"))!.id];
+      return providerResponse(coachContent(evidenceIds));
+    });
+    const response = await getCoach(demo, actual, { env: configured, fetcher });
+    expect(response.source).toBe("nvidia");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("requests JSON schema only for an explicitly verified supporting model", async () => {
     const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
       const payload = JSON.parse(init!.body as string);
@@ -192,6 +220,7 @@ describe("grounded provider provenance and safe failure", () => {
 
   it.each([
     "{not JSON}",
+    "```json\n" + JSON.stringify(coachContent()) + "\n```",
     "x".repeat(6_001),
     { ...coachContent(), source: "nvidia" },
     { ...coachContent(), summary: "x".repeat(401) },
@@ -304,6 +333,51 @@ describe("self-hosted NVIDIA inference in Brev", () => {
     expect(body.observations.flatMap(observation => observation.evidenceEventIds).every(id => facts.allowedIds.has(id))).toBe(true);
     expect(JSON.stringify(body)).not.toContain("fixture-gateway-token-not-real");
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends at most eight real evidence events per branch and validates only the supplied subset", async () => {
+    const primary: CoachRequest["primary"] = { ...input.primary, actions: [{ atMs: 20_000, type: "set-api-replicas", value: 4 }] };
+    const demo: CoachRequest = { mode: "debrief", primary, comparison: { ...primary, actions: [{ atMs: 20_000, type: "set-max-attempts", value: 1 }] }, untilMs: 120_000 };
+    const actual = buildFacts(demo);
+    const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+      const payload = JSON.parse(init!.body as string);
+      const context = JSON.parse(payload.messages[1].content);
+      expect(context).not.toHaveProperty("hintLevel");
+      expect(context.allowedEvidenceEventIds).toEqual(context.evidence.map((event: { id: string }) => event.id));
+      const schema = payload.response_format.json_schema.schema;
+      expect(schema.properties.observations.items.properties.evidenceEventIds.items.enum).toEqual(context.allowedEvidenceEventIds);
+      expect(schema.properties.observations.items.properties.evidenceEventIds).toMatchObject({ minItems: 1, maxItems: 3 });
+      // The decoder receives the complete schema once; prose does not duplicate its long ID enum.
+      expect(payload.messages[0].content).not.toContain("Output schema:");
+      expect(payload.messages[0].content).toContain("never into prose");
+      for (const namespace of ["primary", "comparison"]) {
+        const sent = context.evidence.filter((event: { id: string }) => event.id.startsWith(`${namespace}:`));
+        expect(sent.length).toBeLessThanOrEqual(8);
+        const firstTwo = actual.evidence.filter(event => event.id.startsWith(`${namespace}:`)).slice(0, 2);
+        expect(sent.slice(0, 2)).toEqual(firstTwo);
+        expect(sent.every((event: { id: string }) => actual.allowedIds.has(event.id))).toBe(true);
+      }
+      const omitted = actual.evidence.find(event => !context.allowedEvidenceEventIds.includes(event.id));
+      expect(omitted).toBeDefined();
+      // It exists in the full replay but was not supplied to the model: reject it.
+      return providerResponse(coachContent([omitted!.id, context.allowedEvidenceEventIds[0]]));
+    });
+    const result = await getCoach(demo, actual, { env: brev, fetcher });
+    expect(result.source).toBe("rules");
+    expect(result.warning).toContain("invalid response");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps hint metadata and withholds full case rules in hint requests", async () => {
+    const hint: CoachRequest = { ...input, mode: "hint", hintLevel: 2 };
+    const actual = buildFacts(hint);
+    const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+      const context = JSON.parse(JSON.parse(init!.body as string).messages[1].content);
+      expect(context.hintLevel).toBe(2);
+      expect(context).not.toHaveProperty("caseRules");
+      return providerResponse(coachContent(actual.evidence.slice(0, 2).map(event => event.id)));
+    });
+    expect((await getCoach(hint, actual, { env: brev, fetcher })).source).toBe("nvidia");
   });
 
   it.each([
