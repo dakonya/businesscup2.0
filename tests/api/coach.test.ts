@@ -12,18 +12,18 @@ const input: CoachRequest = {
   mode: "debrief", untilMs: 30_000,
   primary: { schemaVersion: 1, scenarioId: "catalog-slowdown", seed: 42, actions: [] },
 };
-const configured: CoachEnv = { NVIDIA_API_KEY: "fixture-key-not-real", NVIDIA_MODEL: "openai/gpt-oss-120b" };
+const configured: CoachEnv = { INCIDENTLAB_COACH_MODE: "nvidia", NVIDIA_API_KEY: "fixture-key-not-real", NVIDIA_MODEL: "openai/gpt-oss-120b" };
 const facts = buildFacts(input);
 const ids = [...facts.allowedIds];
 function coachContent(evidenceIds = ids.slice(0, 2)) {
   return {
-    summary: "The replay contains customer failures and pending requests.",
+    summary: "В прогоне есть неуспешные и ожидающие ответа запросы.",
     observations: [
-      { text: "Inspect the earlier event.", evidenceEventIds: [evidenceIds[0]] },
-      { text: "Compare the later event.", evidenceEventIds: [evidenceIds[1]] },
+      { text: "Изучи более раннее событие.", evidenceEventIds: [evidenceIds[0]] },
+      { text: "Сравни его с более поздним событием.", evidenceEventIds: [evidenceIds[1]] },
     ],
-    nextExperiment: "Compare one retry setting with the same seed and horizon.",
-    limitations: ["This simulation simplifies production systems."],
+    nextExperiment: "Сравни одну настройку повторов при одинаковом начальном числе и времени.",
+    limitations: ["Эта модель упрощает рабочие системы."],
   };
 }
 function providerResponse(content: unknown = coachContent()) {
@@ -42,6 +42,29 @@ async function checkFallback(response: Response) {
 }
 
 describe("coach input, byte limits, and configuration", () => {
+  it.each([
+    {},
+    { ...configured, INCIDENTLAB_COACH_MODE: undefined },
+    { ...configured, INCIDENTLAB_COACH_MODE: "rules" },
+  ] as CoachEnv[])("keeps default and explicit demo mode local even with provider credentials %#", async env => {
+    const fetcher = vi.fn<typeof fetch>();
+    const response = await checkFallback(await createCoachHandler({ env, fetcher })(request()));
+    expect(response.warning).toBe("Демо-режим: разбор по правилам. Запросы к NVIDIA отключены.");
+    expect(response.source).toBe("rules");
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(health(env).coachConfigured).toBe(false);
+  });
+
+  it("rejects an unknown coach mode without contacting a configured provider", async () => {
+    const env = { ...configured, INCIDENTLAB_COACH_MODE: "unknown" };
+    const fetcher = vi.fn<typeof fetch>();
+    const response = await getCoach(input, facts, { env, fetcher });
+    expect(response.source).toBe("rules");
+    expect(response.warning).toBe("Режим помощника не распознан. Разбор составлен по правилам.");
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(health(env).coachConfigured).toBe(false);
+  });
+
   it("rejects malformed JSON without contacting the provider", async () => {
     const fetcher = vi.fn<typeof fetch>();
     const handler = createCoachHandler({ env: configured, fetcher });
@@ -121,11 +144,12 @@ describe("coach input, byte limits, and configuration", () => {
     [{ NVIDIA_API_KEY: " ", NVIDIA_MODEL: " " }, ["NVIDIA_API_KEY", "NVIDIA_MODEL"]],
   ] as Array<[CoachEnv, string[]]>)("uses a deterministic fallback for missing configuration %#", async (env, missing) => {
     const fetcher = vi.fn<typeof fetch>();
-    const handler = createCoachHandler({ env, fetcher });
+    const handler = createCoachHandler({ env: { ...env, INCIDENTLAB_COACH_MODE: "nvidia" }, fetcher });
     const first = await checkFallback(await handler(request()));
     const second = await checkFallback(await handler(request()));
     expect(first).toEqual(second);
-    expect(first.warning).toBe(`Missing configuration: ${missing.join(", ")}.`);
+    expect(missing.length).toBeGreaterThan(0);
+    expect(first.warning).toBe("ИИ-помощник не настроен. Разбор составлен по правилам на основе этого прогона.");
     expect(JSON.stringify(first)).not.toContain("fixture-key-not-real");
     expect(fetcher).not.toHaveBeenCalled();
   });
@@ -144,7 +168,7 @@ describe("coach input, byte limits, and configuration", () => {
     const response = await createCoachHandler({ env: configured, fetcher })(request({ ...input, untilMs: 0 }));
     const fallback = await checkFallback(response);
     expect(fallback.observations.every(observation => observation.evidenceEventIds.length === 0)).toBe(true);
-    expect(fallback.limitations.some(text => text.includes("No trace events"))).toBe(true);
+    expect(fallback.limitations.some(text => text.includes("событий ещё нет"))).toBe(true);
     expect(fetcher).not.toHaveBeenCalled();
   });
 });
@@ -164,6 +188,7 @@ describe("grounded provider provenance and safe failure", () => {
       const payload = JSON.parse(init!.body as string);
       posted = JSON.parse(payload.messages[1].content);
       expect(payload.reasoning_effort).toBe("low");
+      expect(payload.messages[0].content).toContain("must be concise Russian");
       const primaryId = actual.evidence.find(event => event.id.startsWith("primary:"))!.id;
       const comparisonId = actual.evidence.find(event => event.id.startsWith("comparison:"))!.id;
       return providerResponse(coachContent([primaryId, comparisonId]));
@@ -218,6 +243,25 @@ describe("grounded provider provenance and safe failure", () => {
     expect(result.source).toBe("nvidia");
   });
 
+  it("uses Russian rules when a valid grounded provider response ignores the requested language", async () => {
+    const english = {
+      summary: "The replay contains failed and pending customer requests.",
+      observations: [
+        { text: "Inspect the earlier event.", evidenceEventIds: [ids[0]] },
+        { text: "Compare the later event.", evidenceEventIds: [ids[1]] },
+      ],
+      nextExperiment: "Change one retry control with the same seed and horizon.",
+      limitations: ["This is a simplified simulation."],
+    };
+    const fetcher = vi.fn<typeof fetch>(async () => providerResponse(english));
+    const result = await getCoach(input, facts, { env: configured, fetcher });
+    expect(result.source).toBe("rules");
+    expect(result.warning).toContain("не прошёл проверку");
+    expect(result.summary).toMatch(/[А-Яа-яЁё]/);
+    expect(result.observations.flatMap(observation => observation.evidenceEventIds).every(id => facts.allowedIds.has(id))).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     "{not JSON}",
     "```json\n" + JSON.stringify(coachContent()) + "\n```",
@@ -234,16 +278,16 @@ describe("grounded provider provenance and safe failure", () => {
     const fetcher = vi.fn<typeof fetch>(async () => providerResponse(content));
     const result = await getCoach(input, facts, { env: configured, fetcher });
     expect(result.source).toBe("rules");
-    expect(result.warning).toContain("invalid response");
+    expect(result.warning).toContain("не прошёл проверку");
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(result.observations.flatMap(observation => observation.evidenceEventIds).every(id => facts.allowedIds.has(id))).toBe(true);
   });
 
   it.each([
-    [429, "rate limit"],
-    [500, "unavailable"],
-    [401, "authentication failed (HTTP 401)"],
-    [403, "access denied (HTTP 403)"],
+    [429, "Лимит запросов"],
+    [500, "недоступен"],
+    [401, "401"],
+    [403, "403"],
   ] as const)("returns HTTP 200 rules fallback for provider status %s without exposing its body", async (status, expectedWarning) => {
     const fetcher = vi.fn<typeof fetch>(async () => new Response("private upstream details fixture-key-not-real Invalid JWT serialization: Missing dot delimiter(s)", { status }));
     const result = await checkFallback(await createCoachHandler({ env: configured, fetcher })(request()));
@@ -258,7 +302,7 @@ describe("grounded provider provenance and safe failure", () => {
     const fetcher = vi.fn<typeof fetch>(async () => { throw new Error("fixture-key-not-real secret transport detail"); });
     const result = await getCoach(input, facts, { env: configured, fetcher });
     expect(result.source).toBe("rules");
-    expect(result.warning).toContain("unavailable");
+    expect(result.warning).toContain("недоступен");
     expect(JSON.stringify(result)).not.toContain("fixture-key-not-real");
   });
 
@@ -270,10 +314,10 @@ describe("grounded provider provenance and safe failure", () => {
     });
     const handler = createCoachHandler({ env: configured, fetcher, timeoutMs: 5, limiter: createLimiter({ concurrent: 1, perClient: 10 }) });
     const result = await checkFallback(await handler(request()));
-    expect(result.warning).toContain("timed out");
+    expect(result.warning).toContain("не ответил вовремя");
     expect(signal!.aborted).toBe(true);
     const second = await checkFallback(await handler(request()));
-    expect(second.warning).toContain("timed out");
+    expect(second.warning).toContain("не ответил вовремя");
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
@@ -281,7 +325,7 @@ describe("grounded provider provenance and safe failure", () => {
     const fetcher = vi.fn<typeof fetch>(async () => new Response(new ReadableStream<Uint8Array>({ start() {} })));
     const result = await getCoach(input, facts, { env: configured, fetcher, timeoutMs: 5 });
     expect(result.source).toBe("rules");
-    expect(result.warning).toContain("timed out");
+    expect(result.warning).toContain("не ответил вовремя");
   });
 
   it("bounds provider bytes before parsing the completion envelope", async () => {
@@ -295,22 +339,23 @@ describe("grounded provider provenance and safe failure", () => {
     const fetcher = vi.fn<typeof fetch>();
     const result = await getCoach(input, facts, { env: { ...configured, NVIDIA_BASE_URL: base }, fetcher });
     expect(result.source).toBe("rules");
-    expect(result.warning).toBe("NVIDIA_BASE_URL is invalid.");
+    expect(result.warning).toBe("Не удалось подключить ИИ. Разбор составлен по правилам.");
     expect(fetcher).not.toHaveBeenCalled();
   });
 });
 
 describe("self-hosted NVIDIA inference in Brev", () => {
   const brev: CoachEnv = {
+    INCIDENTLAB_COACH_MODE: "nvidia",
     NVIDIA_DEPLOYMENT: "brev",
     NVIDIA_API_KEY: "fixture-gateway-token-not-real",
     NVIDIA_MODEL: "nvidia/NVIDIA-Nemotron-Nano-9B-v2",
     NVIDIA_BASE_URL: "https://gateway.example.invalid/v1",
   };
-  const provenance = "Self-hosted NVIDIA model on Brev; this is not the NVIDIA-hosted API.";
+  const provenance = "Модель NVIDIA работает на Brev. Это отдельный сервер, а не hosted API NVIDIA.";
 
   it("sends a bounded non-thinking vLLM JSON-schema request and keeps honest contract-v1 provenance", async () => {
-    const providerLimitations = ["A", "B", "C", "D"].map(label => `${label}: this is a simplified simulation.`);
+    const providerLimitations = ["A", "B", "C", "D"].map(label => `${label}: модель упрощает работу сервиса.`);
     const fetcher = vi.fn<typeof fetch>(async (url, init) => {
       expect(String(url)).toBe("https://gateway.example.invalid/v1/chat/completions");
       expect(init!.headers).toMatchObject({ Authorization: "Bearer fixture-gateway-token-not-real" });
@@ -364,7 +409,7 @@ describe("self-hosted NVIDIA inference in Brev", () => {
     });
     const result = await getCoach(demo, actual, { env: brev, fetcher });
     expect(result.source).toBe("rules");
-    expect(result.warning).toContain("invalid response");
+    expect(result.warning).toContain("не прошёл проверку");
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
@@ -381,12 +426,12 @@ describe("self-hosted NVIDIA inference in Brev", () => {
   });
 
   it.each([
-    [{ ...brev, NVIDIA_DEPLOYMENT: "other" }, "NVIDIA_DEPLOYMENT must be hosted or brev."],
-    [{ ...brev, NVIDIA_MODEL: "Qwen/Qwen3-8B" }, "requires the supported NVIDIA"],
-    [{ ...brev, NVIDIA_MODEL: "nvidia/unverified-model" }, "requires the supported NVIDIA"],
-    [{ ...brev, NVIDIA_BASE_URL: undefined }, "Missing configuration: NVIDIA_BASE_URL."],
-    [{ ...brev, NVIDIA_BASE_URL: "https://integrate.api.nvidia.com/v1" }, "NVIDIA_BASE_URL is invalid."],
-    [{ ...brev, NVIDIA_BASE_URL: "http://localhost:8000/v1" }, "NVIDIA_BASE_URL is invalid."],
+    [{ ...brev, NVIDIA_DEPLOYMENT: "other" }, "Неизвестный способ подключения NVIDIA."],
+    [{ ...brev, NVIDIA_MODEL: "Qwen/Qwen3-8B" }, "Для Brev нужна модель NVIDIA Nemotron Nano 9B v2."],
+    [{ ...brev, NVIDIA_MODEL: "nvidia/unverified-model" }, "Для Brev нужна модель NVIDIA Nemotron Nano 9B v2."],
+    [{ ...brev, NVIDIA_BASE_URL: undefined }, "ИИ-помощник не настроен."],
+    [{ ...brev, NVIDIA_BASE_URL: "https://integrate.api.nvidia.com/v1" }, "Не удалось подключить ИИ."],
+    [{ ...brev, NVIDIA_BASE_URL: "http://localhost:8000/v1" }, "Не удалось подключить ИИ."],
   ] as Array<[CoachEnv, string]>)("fails a misconfigured self-hosted deployment before any provider request %#", async (env, message) => {
     const fetcher = vi.fn<typeof fetch>();
     const result = await getCoach(input, facts, { env, fetcher });
@@ -399,8 +444,8 @@ describe("self-hosted NVIDIA inference in Brev", () => {
     const fetcher = vi.fn<typeof fetch>(async () => providerResponse(coachContent(["primary:invented", "comparison:invented"])));
     const result = await getCoach(input, facts, { env: brev, fetcher });
     expect(result.source).toBe("rules");
-    expect(result.warning).toContain("Self-hosted Brev inference:");
-    expect(result.warning).toContain("invalid response");
+    expect(result.warning).toContain("Brev");
+    expect(result.warning).toContain("не прошёл проверку");
     expect(result.observations.flatMap(observation => observation.evidenceEventIds).every(id => facts.allowedIds.has(id))).toBe(true);
   });
 
@@ -408,7 +453,7 @@ describe("self-hosted NVIDIA inference in Brev", () => {
     const fetcher = vi.fn<typeof fetch>(async () => new Response("fixture-gateway-token-not-real upstream details", { status: 401 }));
     const result = await getCoach(input, facts, { env: brev, fetcher });
     expect(result.source).toBe("rules");
-    expect(result.warning).toContain("Self-hosted Brev inference:");
+    expect(result.warning).toContain("Brev");
     expect(result.warning).toContain("HTTP 401");
     expect(JSON.stringify(result)).not.toContain("fixture-gateway-token-not-real");
     expect(JSON.stringify(result)).not.toContain("upstream details");
@@ -424,17 +469,49 @@ describe("self-hosted NVIDIA inference in Brev", () => {
 });
 
 describe("honest hints and request limiting", () => {
+  it("keeps reversed seed-42 outcomes, pending customers and each final queue distinct in rules debrief", () => {
+    const scenario = getScenarios()[0];
+    const reversed: CoachRequest = {
+      mode: "debrief",
+      untilMs: scenario.durationMs,
+      primary: {
+        schemaVersion: 1, scenarioId: scenario.id, seed: 42,
+        actions: [{ atMs: scenario.checkpointMs, type: "set-max-attempts", value: 1 }],
+      },
+      comparison: {
+        schemaVersion: 1, scenarioId: scenario.id, seed: 42,
+        actions: [{ atMs: scenario.checkpointMs, type: "set-api-replicas", value: 4 }],
+      },
+    };
+    const actual = buildFacts(reversed);
+    expect(actual.primary.metrics).toMatchObject({ succeeded: 709, failed: 248, pending: 3, dbQueue: 0 });
+    expect(actual.comparison!.metrics).toMatchObject({ succeeded: 120, failed: 800, pending: 40, dbQueue: 1_355 });
+    const response = rulesCoach(reversed, actual, "Демо-режим: разбор по правилам. Запросы к NVIDIA отключены.");
+    expect(response.source).toBe("rules");
+    expect(response.observations[0].text).toContain("успешных — 709, с ошибкой — 248, в ожидании — 3");
+    expect(response.observations[1].text).toContain("успешных ответов — 120, ошибок — 800, в ожидании — 40");
+    expect(response.observations[1].text).toContain(`успешные ответы ${actual.delta!.succeeded}, ошибки ${actual.delta!.failed}, обращения к базе ${actual.delta!.totalAttempts}`);
+    expect(response.observations[2].text).toContain(`В основной попытке повторов — ${actual.primary.metrics.retries}, очередь БД — 0, активных операций — ${actual.primary.metrics.dbActive}`);
+    expect(response.observations[2].text).toContain(`В сравниваемой попытке повторов — ${actual.comparison!.metrics.retries}, очередь БД — 1355, активных операций — ${actual.comparison!.metrics.dbActive}`);
+    expect(response.observations[2].text).toContain("Таймаут не отменяет работу БД");
+    expect(response.observations[2].text).toContain("Пустая очередь не означает, что все запросы уже завершились");
+    const references = response.observations.flatMap(observation => observation.evidenceEventIds);
+    expect(references.length).toBeGreaterThan(0);
+    expect(references.every(id => actual.allowedIds.has(id))).toBe(true);
+    expect(new Set(references.map(id => id.split(":")[0]))).toEqual(new Set(["primary", "comparison"]));
+  });
+
   it("keeps first-level fallback hints focused on investigation without exposing a winning setting or mechanism", () => {
     const hint: CoachRequest = { ...input, mode: "hint", hintLevel: 1 };
     const hintFacts = buildFacts(hint);
     const response = rulesCoach(hint, hintFacts, "Fixture fallback.");
-    expect(JSON.stringify(response)).not.toMatch(/maximum attempts set to 1|timed-out database work continues|slowdownFactor|root cause|aggressive retries/i);
-    expect(response.nextExperiment).toContain("inspect");
+    expect(JSON.stringify(response)).not.toMatch(/максимум попыток \d|тайм-аут|повторн.{0,20}обращен|slowdownFactor|первопричин|агрессивные повторы/i);
+    expect(response.nextExperiment).toContain("изучи");
     expect(hintFacts.evidence.every(event => ["arrival", "request-succeeded", "request-failed", "intervention"].includes(event.kind))).toBe(true);
     const level2: CoachRequest = { ...hint, hintLevel: 2 };
-    expect(rulesCoach(level2, buildFacts(level2), "Fixture fallback.").nextExperiment).not.toContain("set to 1");
+    expect(rulesCoach(level2, buildFacts(level2), "Fixture fallback.").nextExperiment).not.toContain("максимум попыток 1");
     const level3: CoachRequest = { ...hint, hintLevel: 3 };
-    expect(rulesCoach(level3, buildFacts(level3), "Fixture fallback.").nextExperiment).toContain("maximum attempts set to 1");
+    expect(rulesCoach(level3, buildFacts(level3), "Fixture fallback.").nextExperiment).toContain("максимум попыток 1");
   });
 
   it("returns a genuine HTTP 429 for exhausted per-client budget, without charging invalid input", async () => {

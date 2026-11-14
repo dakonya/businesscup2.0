@@ -62,7 +62,7 @@ try {
   assert.equal(coach.source, "nvidia", `Real inference not confirmed: source=${coach.source}; ${redact(coach.warning ?? "no warning")}`);
   const { source, warning, ...content } = coach;
   coachContentSchema.parse(content);
-  const selfHostedBrev = content.limitations.includes("Self-hosted NVIDIA model on Brev; this is not the NVIDIA-hosted API.");
+  const selfHostedBrev = content.limitations.includes("Модель NVIDIA работает на Brev. Это отдельный сервер, а не hosted API NVIDIA.");
   if (process.env.NVIDIA_DEPLOYMENT?.trim() === "brev") assert.ok(selfHostedBrev, "Expected self-hosted Brev provenance is missing.");
   const eventIds = new Set([...runs.left.events.map(event => `primary:${event.id}`), ...runs.right.events.map(event => `comparison:${event.id}`)]);
   const references = content.observations.flatMap(observation => observation.evidenceEventIds);
