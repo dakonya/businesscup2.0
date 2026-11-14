@@ -1,20 +1,61 @@
-# Конкурсный проект
+# IncidentLab
 
-- Условия конкурса: уточняются; нужно добавить официальные правила, сроки и критерии оценки.
-- Выбранный трек: Skills.
-- Команда: состав будет добавлен.
-- Идея: пока не определена.
+Browser-based on-call practice for individual developers preparing for a first rotation. Track: **Skills**. First scenario: **Catalog slowdown**. Logo: **IL**.
 
-## Минимальная подготовка
+## Install and run
 
-Локальный `.env` создан по шаблону [`.env.example`](./.env.example). Укажите в нём настоящий `NVIDIA_API_KEY`; `NVIDIA_MODEL` пока оставьте пустым. Для нового клона скопируйте шаблон командой `cp .env.example .env`.
+Use **Node.js 24 LTS** and npm:
 
-В GitHub отправляются `.gitignore`, `.env.example` и этот README. Локальный `.env` исключён из Git.
+```bash
+npm ci
+cp .env.example .env  # new clones only; preserve an existing .env
+npm run dev
+```
 
-Ключ должен храниться на сервере. Запросы к NVIDIA будут идти через серверную часть; ключ не должен попадать в браузер.
+Open http://localhost:3000. The current homepage is the frontend handoff scaffold. The backend engine and API are implemented; the full interactive training UI belongs to the frontend integration.
 
-После выбора модели, до разработки приложения, выполните один пробный запрос: проверьте доступ, задержку, нужные функции (например, структурированный ответ или вызов инструментов) и лимиты модели и аккаунта.
+```bash
+npm run typecheck
+npm test
+npm run build
+npm start
+npm run demo
+npm run smoke
+```
 
-Hosted API NVIDIA поддерживает OpenAI-совместимый Chat Completions API. См. [документацию API](https://docs.api.nvidia.com/nim/reference/openai-gpt-oss-120b-infer) и [NVIDIA NIM FAQ](https://forums.developer.nvidia.com/t/nvidia-nim-faq/300317).
+`demo` runs the actual deterministic engine with seed 42 and prints two branch outcomes, deltas, trace sizes, and measured replay time. After a production build, `smoke` starts a temporary local production server and makes one real A/B coach request. It requires `source: "nvidia"`, the shared content schema, and valid branch-specific event IDs; HTTP 200 rules fallback fails the check. `INCIDENTLAB_SMOKE_URL=https://<actual-origin> npm run smoke` checks an existing published server instead. A successful check records a redacted report in ignored `.next/incidentlab-smoke.json`. Read the coach text against the printed metrics before claiming a grounded demo.
 
-Стек и зависимости выберем после идеи. Разработка приложения ещё не начата.
+The older `smoke:coach` is a small transport-only probe; it does not confirm a validated application coach. `health` reports configuration presence, not proven provider health. The latest live check found both NVIDIA variables present but the hosted request returned HTTP 401. See the [current Russian report](docs/engineering/report-ru.md) for the exact inference, integration, and hosting blockers.
+
+On the current development machine, Node/npm were installed outside the repository. If they are absent from PATH:
+
+```bash
+export PATH=/home/dakonya/.local/share/incidentlab-node/bin:$PATH
+```
+
+## Server configuration
+
+| Variable | Purpose |
+| --- | --- |
+| `NVIDIA_API_KEY` | Server-side NVIDIA credential |
+| `NVIDIA_BASE_URL` | Default: `https://integrate.api.nvidia.com/v1` |
+| `NVIDIA_MODEL` | Explicit hosted model ID; no implicit paid-provider/model selection |
+
+Keep credentials in ignored `.env` files or the hosting platform's server environment. Never use a `NEXT_PUBLIC_` credential. No database or additional service is required. Missing configuration, timeout, rate limiting, or invalid provider output produces a clearly labeled `source: "rules"` analysis. The engine does not require AI.
+
+## Architecture and handoff
+
+- `src/lib/contracts.ts`: authoritative contract v1, unchanged from the supplied handoff.
+- `src/lib/sim`: pure, synchronous TypeScript replay shared by browser and server; exports `getScenarios`, `simulateRun`, `compareRuns`, plus validation/fork helpers.
+- `src/lib/server` and `src/app/api`: stateless health/coach handlers. Coach validates the journal, recomputes results, selects bounded evidence, and validates provider JSON and namespaced event IDs.
+- Browser persistence: scenario + seed + ordered actions + cursor. Frontend owns guarded localStorage decoding and the full user flow.
+
+The model computes admission, database queues, timeouts, uncancelled work, retries, and unique customer outcomes. It is a bounded teaching simulation, not real infrastructure or a readiness assessment. Latency statistics describe successful responses only. Read failed and pending counts alongside them. API scaling may increase database pressure in this case; this is not a universal tuning rule.
+
+[Model and measured demo](docs/engineering/model.md) · [Frontend/product handoff](docs/engineering/handoff.md) · [HTTP and coach limits](docs/engineering/api.md) · [Versions, verification, and deployment](docs/engineering/operations.md)
+
+Bootstrap branch: `setup/incidentlab`, commit `78c615b41ac57698beb0426bd36f6594b1a5ba2f`. Backend implementation: `feat/engine-coach`. Frontend owns pages, layouts, styles, components, browser state, assets, UI tests, and demo docs after bootstrap. Backend owns dependencies, contract, simulation, server routes, engineering docs, and associated tests. Do not create a nested project or overwrite another contributor's work.
+
+## Contest context supplied by the team
+
+Three-person team, 24-hour build; web-only B2C; public GitHub and a production URL accessible without mandatory login; PDF up to 10 pages; 5-minute pitch + 2-minute Q&A. Weights: product/engineering 40%, paid value/retention 20%, user/problem 15%, business 15%, originality 10%. These are supplied requirements, not independently verified official rules.

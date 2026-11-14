@@ -1,0 +1,94 @@
+name: incidentlab-brev
+
+services:
+  inference:
+    image: vllm/vllm-openai:v0.10.1@sha256:c62343ee72f094ef574ab3af2717d0c60fec5e0808b238f19ac4c0d22fd152f7
+    network_mode: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    init: true
+    restart: unless-stopped
+    shm_size: 2gb
+    environment:
+      HF_HOME: /model-cache
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      HF_HUB_DISABLE_IMPLICIT_TOKEN: "1"
+      VLLM_USE_V1: "1"
+      VLLM_ATTENTION_BACKEND: FLASHINFER
+    volumes:
+      - model-cache:/model-cache
+    command:
+      - --model
+      - nvidia/NVIDIA-Nemotron-Nano-9B-v2
+      - --revision
+      - 6533e8de2c68e4536bf7c411d7a3ce5734111476
+      - --code-revision
+      - 6533e8de2c68e4536bf7c411d7a3ce5734111476
+      - --tokenizer-revision
+      - 6533e8de2c68e4536bf7c411d7a3ce5734111476
+      - --trust-remote-code
+      - --host
+      - 127.0.0.1
+      - --port
+      - "8000"
+      - --dtype
+      - bfloat16
+      - --mamba_ssm_cache_dtype
+      - float32
+      - --max-model-len
+      - "8192"
+      - --max-num-seqs
+      - "2"
+      - --gpu-memory-utilization
+      - "0.80"
+      - --no-enable-prefix-caching
+      - --disable-log-requests
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2)"]
+      interval: 15s
+      timeout: 4s
+      start_period: 600s
+      retries: 4
+
+  gateway:
+    image: python:3.12.12-slim@sha256:f3fa41d74a768c2fce8016b98c191ae8c1bacd8f1152870a3f9f87d350920b7c
+    network_mode: host
+    init: true
+    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 128m
+    env_file: .env
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./gateway.py:/app/gateway.py:ro
+    command: ["python3", "/app/gateway.py"]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/health',timeout=2)"]
+      interval: 15s
+      timeout: 4s
+      retries: 3
+
+  tunnel:
+    image: cloudflare/cloudflared:2025.10.0@sha256:396cd2e6f021275ad09969a1b4f1a7e62ca5349fde62781ce082bb2c18105c70
+    network_mode: host
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: ["tunnel", "--no-autoupdate", "--url", "http://127.0.0.1:9000"]
+    profiles: [demo-tunnel]
+
+volumes:
+  model-cache:
